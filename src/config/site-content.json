@@ -1,0 +1,78 @@
+{
+	"meta": {
+		"title": "zx_lucky",
+		"description": "zxluckly 的个人博客，记录全栈开发、探索、笔记。更新代码仓库。",
+		"username": "ZX"
+	},
+	"theme": {
+		"colorBrand": "#35bfab",
+		"colorPrimary": "#334f52",
+		"colorSecondary": "#7b888e",
+		"colorBrandSecondary": "#1fc9e7",
+		"colorBg": "#eeeeee",
+		"colorBorder": "#ffffff",
+		"colorCard": "#ffffff66",
+		"colorArticle": "#ffffffcc"
+	},
+	"backgroundColors": [
+		"#EDDD62",
+		"#9EE7D1",
+		"#84D68A",
+		"#EDDD62",
+		"#88E6E5",
+		"#a7f3d0"
+	],
+	"artImages": [
+		{
+			"id": "cat",
+			"url": "/images/art/cat.png"
+		},
+		{
+			"id": "a46372ff45bc5524",
+			"url": "/images/art/a46372ff45bc5524.jpg"
+		}
+	],
+	"currentArtImageId": "a46372ff45bc5524",
+	"backgroundImages": [
+		{
+			"id": "",
+			"url": ""
+		}
+	],
+	"currentBackgroundImageId": "",
+	"socialButtons": [
+		{
+			"id": "email",
+			"type": "email",
+			"value": "haochenwu7@gmail.com",
+			"label": "",
+			"order": 1
+		},
+		{
+			"id": "button-1770980588570",
+			"type": "github",
+			"value": "https://github.com/zxluckly",
+			"label": "GitHub",
+			"order": 3
+		},
+		{
+			"id": "button-1772626490396",
+			"type": "link",
+			"value": "https://qm.qq.com/cgi-bin/qm/qr?k=Oat6oSS-1DyxxvhTuwSkyc077slHnS1N",
+			"label": "qq",
+			"order": 2
+		}
+	],
+	"clockShowSeconds": false,
+	"summaryInContent": false,
+	"isCachePem": false,
+	"hideEditButton": true,
+	"enableCategories": true,
+	"currentHatIndex": 3,
+	"hatFlipped": false,
+	"enableChristmas": false,
+	"beian": {
+		"text": "",
+		"link": ""
+	}
+}
