@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="24px" height="24px" viewBox="0 0 12 12">
+  <!-- 多边形：填充和描边都用currentColor，描边宽度统一为1.5 -->
+  <polygon points="11.25 3.75 8.75 6 11.25 8.25 11.25 3.75" fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.8" data-color="color-2"></polygon>
+  <!-- 圆形：填充用currentColor，无描边 -->
+  <circle cx="3.25" cy="4.25" r=".75" fill="currentColor" stroke-width="0" data-color="color-2"></circle>
+  <!-- 矩形：无填充，描边用currentColor，描边宽度统一为1.5 -->
+  <rect x=".753" y="1.75" width="8" height="8.5" rx="2" ry="2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.8"></rect>
+</svg>
