@@ -36,9 +36,9 @@ type ChatMessage = {
 }
 
 type ArkUpstreamErrorDetails = {
-	status: number
-	statusText: string
-	body: string
+	status: number | null
+	statusText: string | null
+	body: string | null
 	parsedBody: unknown
 	headers: {
 		contentType: string | null
@@ -46,6 +46,8 @@ type ArkUpstreamErrorDetails = {
 		xRequestId: string | null
 		xTraceId: string | null
 	}
+	overloaded?: boolean
+	cause?: string | null
 }
 
 class ArkUpstreamError extends Error {
@@ -266,36 +268,59 @@ function tryParseJson(value: string): unknown {
 	}
 }
 
-async function fetchArk(body: Record<string, unknown>) {
-	const response = await fetch(ARK_API_URL, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			'Authorization': `Bearer ${ARK_API_KEY}`
-		},
-		body: JSON.stringify(body)
-	})
-
-	if (!response.ok) {
-		const errorText = await response.text()
-		const details: ArkUpstreamErrorDetails = {
-			status: response.status,
-			statusText: response.statusText,
-			body: errorText,
-			parsedBody: tryParseJson(errorText),
-			headers: {
-				contentType: response.headers.get('content-type'),
-				retryAfter: response.headers.get('retry-after'),
-				xRequestId: response.headers.get('x-request-id'),
-				xTraceId: response.headers.get('x-tt-logid') || response.headers.get('x-trace-id')
-			}
+function serializeUnknownError(error: unknown) {
+	if (error instanceof Error) {
+		return {
+			name: error.name,
+			message: error.message,
+			stack: error.stack,
+			...(error as any)
 		}
-
-		console.error('ARK API Error:', details)
-		throw new ArkUpstreamError(details)
 	}
 
-	return response
+	if (typeof error === 'object' && error !== null) {
+		return { ...(error as Record<string, unknown>) }
+	}
+
+	return { value: error }
+}
+
+async function fetchArk(body: Record<string, unknown>) {
+	try {
+		const response = await fetch(ARK_API_URL, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${ARK_API_KEY}`
+			},
+			body: JSON.stringify(body)
+		})
+
+		if (!response.ok) {
+			const errorText = await response.text()
+			const details: ArkUpstreamErrorDetails = {
+				status: response.status,
+				statusText: response.statusText,
+				body: errorText,
+				parsedBody: tryParseJson(errorText),
+				headers: {
+					contentType: response.headers.get('content-type'),
+					retryAfter: response.headers.get('retry-after'),
+					xRequestId: response.headers.get('x-request-id'),
+					xTraceId: response.headers.get('x-tt-logid') || response.headers.get('x-trace-id')
+				}
+			}
+
+			console.error('ARK API Error:', details)
+			throw new ArkUpstreamError(details)
+		}
+
+		return response
+	} catch (error) {
+		const serializedError = serializeUnknownError(error)
+		console.error('ARK API Fetch Exception:', serializedError)
+		throw error
+	}
 }
 
 function createFactInstruction(toolResults: ToolResult[]) {
@@ -533,9 +558,9 @@ export async function POST(request: Request) {
 			)
 		}
 
-		console.error('AI Chat Error:', error)
+		console.error('AI Chat Error:', serializeUnknownError(error))
 		return NextResponse.json(
-			{ error: error.message || '服务器错误' },
+			{ error: error instanceof Error ? error.message : '服务器错误' },
 			{ status: 500 }
 		)
 	}
