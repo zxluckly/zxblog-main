@@ -35,6 +35,28 @@ type ChatMessage = {
 	[key: string]: unknown
 }
 
+type ArkUpstreamErrorDetails = {
+	status: number
+	statusText: string
+	body: string
+	parsedBody: unknown
+	headers: {
+		contentType: string | null
+		retryAfter: string | null
+		xRequestId: string | null
+		xTraceId: string | null
+	}
+}
+
+class ArkUpstreamError extends Error {
+	details: ArkUpstreamErrorDetails
+
+	constructor(details: ArkUpstreamErrorDetails) {
+		super(`ARK API Error (${details.status} ${details.statusText}): ${details.body || 'empty body'}`)
+		this.name = 'ArkUpstreamError'
+		this.details = details
+	}
+}
 const projectList = projects as Project[]
 
 // 初始化 Redis 客户端
@@ -236,6 +258,14 @@ function createStreamResponse(body: ReadableStream<Uint8Array> | null) {
 	})
 }
 
+function tryParseJson(value: string): unknown {
+	try {
+		return JSON.parse(value)
+	} catch {
+		return null
+	}
+}
+
 async function fetchArk(body: Record<string, unknown>) {
 	const response = await fetch(ARK_API_URL, {
 		method: 'POST',
@@ -248,12 +278,21 @@ async function fetchArk(body: Record<string, unknown>) {
 
 	if (!response.ok) {
 		const errorText = await response.text()
-		console.error('ARK API Error:', {
+		const details: ArkUpstreamErrorDetails = {
 			status: response.status,
 			statusText: response.statusText,
-			body: errorText
-		})
-		throw new Error(`AI 服务请求失败: ${response.statusText}`)
+			body: errorText,
+			parsedBody: tryParseJson(errorText),
+			headers: {
+				contentType: response.headers.get('content-type'),
+				retryAfter: response.headers.get('retry-after'),
+				xRequestId: response.headers.get('x-request-id'),
+				xTraceId: response.headers.get('x-tt-logid') || response.headers.get('x-trace-id')
+			}
+		}
+
+		console.error('ARK API Error:', details)
+		throw new ArkUpstreamError(details)
 	}
 
 	return response
@@ -483,6 +522,17 @@ export async function POST(request: Request) {
 
 		return createStreamResponse(response.body)
 	} catch (error: any) {
+		if (error instanceof ArkUpstreamError) {
+			console.error('AI Chat Upstream Error:', error.details)
+			return NextResponse.json(
+				{
+					error: error.message,
+					upstream: error.details
+				},
+				{ status: error.details.status >= 400 ? error.details.status : 502 }
+			)
+		}
+
 		console.error('AI Chat Error:', error)
 		return NextResponse.json(
 			{ error: error.message || '服务器错误' },
