@@ -123,13 +123,10 @@ export default function NavCard() {
 	}, [form, styles])
 
 	useEffect(() => {
-		if (form === 'icons' && activeIndex !== undefined && hoveredIndex !== activeIndex) {
-			const timer = setTimeout(() => {
-				setHoveredIndex(activeIndex)
-			}, 1500)
-			return () => clearTimeout(timer)
+		if (form === 'icons' && maxSM && activeIndex !== undefined) {
+			setHoveredIndex(activeIndex)
 		}
-	}, [hoveredIndex, activeIndex, form])
+	}, [activeIndex, form, maxSM])
 
 	if (maxSM) position = { x: center.x - size.width / 2, y: 16 }
 

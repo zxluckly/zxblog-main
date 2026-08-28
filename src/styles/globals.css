@@ -34,9 +34,22 @@
 		text-overflow: ellipsis;
 	}
 
-	button {
-		@apply cursor-pointer;
-	}
+		a,
+		button:not(:disabled),
+		[role='button']:not([aria-disabled='true']),
+		input[type='button']:not(:disabled),
+		input[type='submit']:not(:disabled),
+		input[type='reset']:not(:disabled),
+		label,
+		summary,
+		select:not(:disabled),
+		.cursor-pointer:not([aria-disabled='true']):not(:disabled) {
+			cursor: url('/images/cursor.svg') 2 1, auto !important;
+		}
+
+		button {
+			@apply cursor-pointer;
+		}
 
 	.range-track {
 		@apply flex-1;
