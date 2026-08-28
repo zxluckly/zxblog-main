@@ -3,8 +3,8 @@ import { Redis } from '@upstash/redis'
 import projects from '@/app/projects/list.json'
 import siteContent from '@/config/site-content.json'
 
-// 使用 Edge Runtime，部署到全球边缘节点
-export const runtime = 'edge'
+// 使用 Node.js Runtime，避免 Edge Runtime 出网时的额外限制
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ARK_API_KEY = process.env.ARK_API_KEY
@@ -317,8 +317,9 @@ async function fetchArk(body: Record<string, unknown>) {
 
 		return response
 	} catch (error) {
-		const serializedError = serializeUnknownError(error)
-		console.error('ARK API Fetch Exception:', serializedError)
+		if (!(error instanceof ArkUpstreamError)) {
+			console.error('ARK API Fetch Exception:', serializeUnknownError(error))
+		}
 		throw error
 	}
 }
