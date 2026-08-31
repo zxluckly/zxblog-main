@@ -14,6 +14,9 @@ const ARK_RESPONSES_MODEL = process.env.ARK_RESPONSES_MODEL || 'ep-2026083123060
 const ARK_RESPONSES_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses'
 const ENABLE_SEARCH_USER_LOCATION = process.env.ENABLE_SEARCH_USER_LOCATION !== 'false'
 const ARK_REQUEST_TIMEOUT_MS = 90_000
+const WEB_SEARCH_MAX_KEYWORD = 2
+const WEB_SEARCH_LIMIT = 10
+const MAX_SEARCH_TOOL_CALLS = 3
 
 type Project = {
 	name: string
@@ -558,6 +561,7 @@ function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null
 	let buffer = ''
 	let emittedUsage = false
 	let firstTextLogged = false
+	let firstUpstreamByteLogged = false
 
 	const transformed = new ReadableStream<Uint8Array>({
 		async start(controller) {
@@ -617,6 +621,10 @@ function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null
 				while (true) {
 					const { done, value } = await reader.read()
 					if (done) break
+					if (!firstUpstreamByteLogged) {
+						firstUpstreamByteLogged = true
+						logSearchTelemetry('first_upstream_byte', telemetry)
+					}
 					buffer += decoder.decode(value, { stream: true })
 					processCompleteRecords()
 				}
@@ -625,6 +633,7 @@ function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null
 				if (buffer.trim()) processEvent(buffer)
 				const remaining = metadataFilter.flush()
 				if (remaining) enqueueText(remaining)
+				logSearchTelemetry('stream_closed', telemetry)
 				controller.close()
 			} catch (error) {
 				logSearchTelemetry('stream_error', telemetry)
@@ -673,8 +682,11 @@ async function streamResponsesAnswer(messages: ChatMessage[], instructions: stri
 		instructions,
 		tools: [{
 			type: 'web_search',
+			max_keyword: WEB_SEARCH_MAX_KEYWORD,
+			limit: WEB_SEARCH_LIMIT,
 			...(location ? { user_location: location } : {})
 		}],
+		max_tool_calls: MAX_SEARCH_TOOL_CALLS,
 		stream: true,
 		input: createResponsesInput(messages)
 	})
