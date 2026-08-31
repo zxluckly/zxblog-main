@@ -472,7 +472,7 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 									type='button'
 									onClick={() => setIsSmartSearch(v => !v)}
 									disabled={isLoading}
-									className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${isSmartSearch ? 'border-[var(--color-brand)] bg-[var(--color-brand)]/10 text-[var(--color-brand)]' : 'border-gray-200 bg-white/80 text-gray-600 hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]'}`}
+									className={`rounded-lg border px-3 py-2.5 text-xs font-medium transition-colors disabled:opacity-50 ${isSmartSearch ? 'border-[var(--color-brand)] bg-[var(--color-brand)]/10 text-[var(--color-brand)]' : 'border-gray-200 bg-white/80 text-gray-600 hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]'}`}
 									title='切换智能搜索模式'>
 									{isSmartSearch ? '智能搜索已开' : '智能搜索'}
 								</button>
