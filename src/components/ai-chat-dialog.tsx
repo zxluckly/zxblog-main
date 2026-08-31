@@ -10,6 +10,9 @@ interface Message {
 	role: 'user' | 'assistant'
 	content: string | Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }>
 	isStreaming?: boolean
+	searchStatus?: 'searching' | 'search_completed'
+	webSearchCount?: number | null
+	searchDetailsAvailable?: boolean
 }
 
 interface AIChatDialogProps {
@@ -281,6 +284,9 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 			const reader = response.body?.getReader()
 			const decoder = new TextDecoder()
 			let assistantMessage = ''
+			let searchStatus: Message['searchStatus']
+			let webSearchCount: number | null | undefined
+			let searchDetailsAvailable = false
 			let sseBuffer = ''
 			const assistantIndex = newMessages.length
 
@@ -293,27 +299,48 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 					newMsgs[assistantIndex] = {
 						role: 'assistant',
 						content,
-						isStreaming
+						isStreaming,
+						searchStatus,
+						webSearchCount,
+						searchDetailsAvailable
 					}
 					return newMsgs
 				})
 			}
 
-			const processSseLine = (line: string) => {
-				if (!line.startsWith('data: ')) return
+			const processSseEvent = (record: string) => {
+				let eventName = ''
+				const dataLines: string[] = []
 
-				const data = line.slice(6).trim()
+				for (const line of record.split(/\r?\n/)) {
+					if (line.startsWith('event:')) eventName = line.slice(6).trim()
+					if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+				}
+
+				const data = dataLines.join('\n').trim()
 				if (!data || data === '[DONE]') return
 
 				try {
 					const parsed = JSON.parse(data)
+					if (eventName === 'status') {
+						searchStatus = parsed.phase === 'searching' || parsed.phase === 'search_completed' ? parsed.phase : undefined
+						updateAssistantMessage(assistantMessage, true)
+						return
+					}
+					if (eventName === 'usage') {
+						webSearchCount = typeof parsed.webSearch === 'number' ? parsed.webSearch : null
+						searchDetailsAvailable = parsed.detailsAvailable === true
+						updateAssistantMessage(assistantMessage, true)
+						return
+					}
+
 					const content = parsed.choices?.[0]?.delta?.content
-					if (content) {
+					if (typeof content === 'string' && content) {
 						assistantMessage += content
 						updateAssistantMessage(assistantMessage, true)
 					}
-				} catch (e) {
-					console.warn('忽略无效 SSE 数据:', e)
+				} catch (error) {
+					console.warn('忽略无效 SSE 数据:', error)
 				}
 			}
 
@@ -323,20 +350,22 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 					if (done) break
 
 					sseBuffer += decoder.decode(value, { stream: true })
-					const lines = sseBuffer.split('\n')
-					sseBuffer = lines.pop() || ''
+					const records = sseBuffer.split(/\r?\n\r?\n/)
+					sseBuffer = records.pop() || ''
 
-					for (const line of lines) {
-						processSseLine(line.trimEnd())
+					for (const record of records) {
+						processSseEvent(record)
 					}
 				}
 
 				sseBuffer += decoder.decode()
 				if (sseBuffer.trim()) {
-					processSseLine(sseBuffer.trimEnd())
+					processSseEvent(sseBuffer)
 				}
 			}
 
+			const completedSearchStatus = searchStatus === 'searching' ? 'search_completed' : searchStatus
+			if (completedSearchStatus !== searchStatus) searchStatus = completedSearchStatus
 			updateAssistantMessage(assistantMessage, false)
 		} catch (error: any) {
 			console.error('AI Chat Error:', error)
@@ -359,7 +388,17 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 		const { content } = msg
 
 		if (msg.role === 'assistant' && typeof content === 'string') {
-			return <AIMarkdownMessage content={content} isStreaming={msg.isStreaming} />
+			return (
+				<div className='space-y-1.5'>
+					{msg.searchStatus === 'searching' && <p className='text-secondary text-xs'>正在联网检索…</p>}
+					<AIMarkdownMessage content={content} isStreaming={msg.isStreaming} />
+					{msg.webSearchCount !== undefined && (
+						<p className='text-secondary text-xs'>
+							{msg.webSearchCount === null ? 'owo' : `联网搜索 ${msg.webSearchCount} 次`}
+						</p>
+					)}
+				</div>
+			)
 		}
 
 		if (typeof content === 'string') {

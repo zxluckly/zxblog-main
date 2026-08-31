@@ -8,10 +8,12 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ARK_API_KEY = process.env.ARK_API_KEY
-const ARK_MODEL = process.env.ARK_MODEL || 'ep-20250310111028-lvbvn'
+const ARK_MODEL = process.env.ARK_MODEL || 'ep-20260831230602-26bn4'
 const ARK_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
-const ARK_RESPONSES_MODEL = process.env.ARK_RESPONSES_MODEL || 'ep-20260731234007-rrwxs'
+const ARK_RESPONSES_MODEL = process.env.ARK_RESPONSES_MODEL || 'ep-20260831230602-26bn4'
 const ARK_RESPONSES_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses'
+const ENABLE_SEARCH_USER_LOCATION = process.env.ENABLE_SEARCH_USER_LOCATION !== 'false'
+const ARK_REQUEST_TIMEOUT_MS = 90_000
 
 type Project = {
 	name: string
@@ -35,6 +37,19 @@ type ChatMessage = {
 	role: string
 	content: unknown
 	[key: string]: unknown
+}
+
+type SearchUserLocation = {
+	type: 'approximate'
+	country?: string
+	region?: string
+	city?: string
+}
+
+type SearchTelemetry = {
+	requestId: string
+	startedAt: number
+	locationSource: 'cloudflare' | 'none'
 }
 
 type ArkUpstreamErrorDetails = {
@@ -426,6 +441,49 @@ function createSseChunk(content: string) {
 	return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`
 }
 
+function createSseEvent(event: string, data: unknown) {
+	return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getString(value: unknown, maxLength = 120): string | undefined {
+	if (typeof value !== 'string') return undefined
+	const normalized = value.trim()
+	if (!normalized || normalized.length > maxLength || /[\x00-\x1f\x7f]/.test(normalized)) return undefined
+	return normalized
+}
+
+function getCloudflareLocation(request: Request): SearchUserLocation | undefined {
+	if (!ENABLE_SEARCH_USER_LOCATION) return undefined
+
+	const cf = (request as Request & { cf?: unknown }).cf
+	if (!isRecord(cf)) return undefined
+
+	const country = getString(cf.country)
+	const region = getString(cf.region)
+	const city = getString(cf.city)
+	if (!country && !region && !city) return undefined
+
+	return {
+		type: 'approximate',
+		...(country ? { country } : {}),
+		...(region ? { region } : {}),
+		...(city ? { city } : {})
+	}
+}
+
+function logSearchTelemetry(event: string, telemetry: SearchTelemetry, fields: Record<string, unknown> = {}) {
+	console.info('AI search telemetry', {
+		event,
+		requestId: telemetry.requestId,
+		elapsedMs: Math.round(performance.now() - telemetry.startedAt),
+		...fields
+	})
+}
+
 async function streamArkResponses(body: Record<string, unknown>) {
 	const response = await fetch(ARK_RESPONSES_API_URL, {
 		method: 'POST',
@@ -433,6 +491,7 @@ async function streamArkResponses(body: Record<string, unknown>) {
 			'Content-Type': 'application/json',
 			'Authorization': `Bearer ${ARK_API_KEY}`
 		},
+		signal: AbortSignal.timeout(ARK_REQUEST_TIMEOUT_MS),
 		body: JSON.stringify(body)
 	})
 
@@ -458,8 +517,125 @@ async function streamArkResponses(body: Record<string, unknown>) {
 	return response
 }
 
-function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null) {
-	return createFilteredStreamResponse(source, extractResponsesOutputText)
+function getSearchUsage(parsed: unknown) {
+	if (!isRecord(parsed) || parsed.type !== 'response.completed' || !isRecord(parsed.response)) return null
+
+	const usage = parsed.response.usage
+	if (!isRecord(usage)) return { webSearch: null, hasDetails: false }
+
+	const toolUsage = isRecord(usage.tool_usage) ? usage.tool_usage : null
+	const toolUsageDetails = isRecord(usage.tool_usage_details) ? usage.tool_usage_details : null
+	const rawWebSearchDetails = toolUsageDetails?.web_search
+	const webSearchDetails = isRecord(rawWebSearchDetails)
+		? Object.fromEntries(Object.entries(rawWebSearchDetails)
+			.filter(([key, value]) => ['count', 'total'].includes(key) && (typeof value === 'number' || typeof value === 'boolean')))
+		: undefined
+	const webSearch = typeof toolUsage?.web_search === 'number' && Number.isFinite(toolUsage.web_search)
+		? toolUsage.web_search
+		: null
+
+	return {
+		webSearch,
+		details: webSearchDetails,
+		hasDetails: rawWebSearchDetails !== undefined
+	}
+}
+
+function getSearchStatus(parsed: unknown): 'searching' | 'search_completed' | null {
+	if (!isRecord(parsed) || typeof parsed.type !== 'string') return null
+	if (parsed.type === 'response.web_search_call.in_progress' || parsed.type === 'response.web_search_call.searching') {
+		return 'searching'
+	}
+	return parsed.type === 'response.web_search_call.completed' ? 'search_completed' : null
+}
+
+function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null, telemetry: SearchTelemetry) {
+	if (!source) return createStreamResponse(null)
+
+	const decoder = new TextDecoder()
+	const encoder = new TextEncoder()
+	const metadataFilter = createLeadingMetadataFilter()
+	let buffer = ''
+	let emittedUsage = false
+	let firstTextLogged = false
+
+	const transformed = new ReadableStream<Uint8Array>({
+		async start(controller) {
+			const reader = source.getReader()
+
+			const enqueue = (value: string) => controller.enqueue(encoder.encode(value))
+			const enqueueText = (content: string) => {
+				const visible = metadataFilter.push(content)
+				if (!visible) return
+				if (!firstTextLogged) {
+					firstTextLogged = true
+					logSearchTelemetry('first_visible_text', telemetry)
+				}
+				enqueue(createSseChunk(visible))
+			}
+
+			const processEvent = (record: string) => {
+				const dataLines: string[] = []
+				for (const line of record.split(/\r?\n/)) {
+					if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+				}
+
+				const data = dataLines.join('\n').trim()
+				if (!data || data === '[DONE]') return
+				const parsed = tryParseJson(data)
+
+				const status = getSearchStatus(parsed)
+				if (status) {
+					logSearchTelemetry(status, telemetry)
+					enqueue(createSseEvent('status', { phase: status }))
+				}
+
+				const usage = getSearchUsage(parsed)
+				if (usage && !emittedUsage) {
+					emittedUsage = true
+					logSearchTelemetry('completed', telemetry, usage)
+					enqueue(createSseEvent('usage', {
+						type: 'usage',
+						webSearch: usage.webSearch,
+						details: usage.details,
+						detailsAvailable: usage.hasDetails
+					}))
+					enqueue(createSseEvent('status', { phase: 'completed' }))
+				}
+
+				const content = extractResponsesOutputText({ eventName: null, data })
+				if (content) enqueueText(content)
+			}
+
+			const processCompleteRecords = () => {
+				const records = buffer.split(/\r?\n\r?\n/)
+				buffer = records.pop() || ''
+				for (const record of records) processEvent(record)
+			}
+
+			try {
+				while (true) {
+					const { done, value } = await reader.read()
+					if (done) break
+					buffer += decoder.decode(value, { stream: true })
+					processCompleteRecords()
+				}
+
+				buffer += decoder.decode()
+				if (buffer.trim()) processEvent(buffer)
+				const remaining = metadataFilter.flush()
+				if (remaining) enqueueText(remaining)
+				controller.close()
+			} catch (error) {
+				logSearchTelemetry('stream_error', telemetry)
+				controller.error(error)
+			} finally {
+				reader.releaseLock()
+			}
+		}
+	})
+
+	return createStreamResponse(transformed)
 }
 
 async function fetchArkResponses(body: Record<string, unknown>) {
@@ -491,11 +667,14 @@ function createResponsesInput(messages: ChatMessage[]) {
 	}))
 }
 
-async function streamResponsesAnswer(messages: ChatMessage[], instructions: string) {
+async function streamResponsesAnswer(messages: ChatMessage[], instructions: string, location?: SearchUserLocation) {
 	return fetchArkResponses({
 		model: ARK_RESPONSES_MODEL,
 		instructions,
-		tools: [{ type: 'web_search' }],
+		tools: [{
+			type: 'web_search',
+			...(location ? { user_location: location } : {})
+		}],
 		stream: true,
 		input: createResponsesInput(messages)
 	})
@@ -764,6 +943,14 @@ export async function POST(request: Request) {
 		]
 
 		if (isSearchMode) {
+			const location = getCloudflareLocation(request)
+			const telemetry: SearchTelemetry = {
+				requestId: crypto.randomUUID(),
+				startedAt: performance.now(),
+				locationSource: location ? 'cloudflare' : 'none'
+			}
+			logSearchTelemetry('request_received', telemetry, { hasLocation: Boolean(location) })
+
 			console.log('Sending request to ARK Responses API:', {
 				model: ARK_RESPONSES_MODEL,
 				messageCount: safeMessages.length,
@@ -771,8 +958,9 @@ export async function POST(request: Request) {
 				clientId: clientId.slice(0, 20) + '...'
 			})
 
-			const response = await streamResponsesAnswer(safeMessages, SEARCH_SYSTEM_PROMPT)
-			return createResponsesStreamResponse(response.body)
+			const response = await streamResponsesAnswer(safeMessages, SEARCH_SYSTEM_PROMPT, location)
+			logSearchTelemetry('upstream_connected', telemetry)
+			return createResponsesStreamResponse(response.body, telemetry)
 		}
 
 		const userText = getLastUserText(safeMessages)
