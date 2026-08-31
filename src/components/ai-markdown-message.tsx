@@ -8,7 +8,7 @@ interface AIMarkdownMessageProps {
 }
 
 export function AIMarkdownMessage({ content, isStreaming = false }: AIMarkdownMessageProps) {
-	const { content: renderedContent, loading } = useMarkdownRender(content)
+	const { content: renderedContent, loading } = useMarkdownRender(content, { disableStrikethrough: true })
 
 	// 如果正在加载且内容为空，显示占位符
 	if (loading && !content) {

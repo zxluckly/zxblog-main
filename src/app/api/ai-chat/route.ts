@@ -262,6 +262,125 @@ function createStreamResponse(body: ReadableStream<Uint8Array> | null) {
 	})
 }
 
+type SseEvent = {
+	eventName: string | null
+	data: string
+}
+
+type SseTextExtractor = (event: SseEvent) => string
+
+function createLeadingMetadataFilter() {
+	let pending = ''
+	let confirmedAnswer = false
+	const metadataStart = '用户现在说'
+	const metadataPrefix = /^用户现在说[\s\S]{0,600}?我将(?:以)?[\s\S]{0,600}?(?:回复用户|回答用户|进行回复)[\s\S]{0,200}?[。！？]/
+
+	return {
+		push(content: string) {
+			if (confirmedAnswer) return content
+
+			pending += content
+			while (true) {
+				const match = pending.match(metadataPrefix)
+				if (!match) break
+				pending = pending.slice(match[0].length)
+			}
+
+			const mayBeMetadata = metadataStart.startsWith(pending) || pending.startsWith(metadataStart)
+			if (!mayBeMetadata || pending.length >= 1024) {
+				confirmedAnswer = true
+				const visible = pending
+				pending = ''
+				return visible
+			}
+
+			return ''
+		},
+		flush() {
+			const visible = pending
+			pending = ''
+			return visible
+		}
+	}
+}
+
+function createFilteredStreamResponse(source: ReadableStream<Uint8Array> | null, extractText: SseTextExtractor) {
+	if (!source) return createStreamResponse(null)
+
+	const decoder = new TextDecoder()
+	const encoder = new TextEncoder()
+	const metadataFilter = createLeadingMetadataFilter()
+	let buffer = ''
+
+	const transformed = new ReadableStream<Uint8Array>({
+		async start(controller) {
+			const reader = source.getReader()
+
+			const enqueueContent = (content: string) => {
+				const visible = metadataFilter.push(content)
+				if (visible) controller.enqueue(encoder.encode(createSseChunk(visible)))
+			}
+
+			const processEvent = (record: string) => {
+				let eventName: string | null = null
+				const dataLines: string[] = []
+
+				for (const line of record.split(/\r?\n/)) {
+					if (line.startsWith('event:')) eventName = line.slice(6).trim() || null
+					if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+				}
+
+				const data = dataLines.join('\n').trim()
+				if (!data || data === '[DONE]') return
+
+				const content = extractText({ eventName, data })
+				if (content) enqueueContent(content)
+			}
+
+			const processCompleteRecords = () => {
+				const records = buffer.split(/\r?\n\r?\n/)
+				buffer = records.pop() || ''
+				for (const record of records) processEvent(record)
+			}
+
+			try {
+				while (true) {
+					const { done, value } = await reader.read()
+					if (done) break
+					buffer += decoder.decode(value, { stream: true })
+					processCompleteRecords()
+				}
+
+				buffer += decoder.decode()
+				if (buffer.trim()) processEvent(buffer)
+
+				const remaining = metadataFilter.flush()
+				if (remaining) controller.enqueue(encoder.encode(createSseChunk(remaining)))
+				controller.close()
+			} catch (error) {
+				controller.error(error)
+			} finally {
+				reader.releaseLock()
+			}
+		}
+	})
+
+	return createStreamResponse(transformed)
+}
+
+function extractChatCompletionText({ data }: SseEvent): string {
+	const parsed = tryParseJson(data) as any
+	const content = parsed?.choices?.[0]?.delta?.content
+	return typeof content === 'string' ? content : ''
+}
+
+function extractResponsesOutputText({ eventName, data }: SseEvent): string {
+	const parsed = tryParseJson(data) as any
+	const type = parsed?.type || eventName
+	if (type !== 'response.output_text.delta') return ''
+	return typeof parsed?.delta === 'string' ? parsed.delta : ''
+}
+
 function createJsonResponse(body: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(body), {
 		...init,
@@ -340,69 +459,7 @@ async function streamArkResponses(body: Record<string, unknown>) {
 }
 
 function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null) {
-	if (!source) return createStreamResponse(null)
-
-	const decoder = new TextDecoder()
-	const encoder = new TextEncoder()
-	let buffer = ''
-
-	const transformed = new ReadableStream<Uint8Array>({
-		async start(controller) {
-			const reader = source.getReader()
-
-			try {
-				while (true) {
-					const { done, value } = await reader.read()
-					if (done) break
-
-					buffer += decoder.decode(value, { stream: true })
-					const lines = buffer.split('\n')
-					buffer = lines.pop() || ''
-
-					for (const rawLine of lines) {
-						const line = rawLine.trim()
-						if (!line.startsWith('data: ')) continue
-
-						const data = line.slice(6).trim()
-						if (!data || data === '[DONE]') continue
-
-						const parsed = tryParseJson(data) as any
-						const delta = parsed?.delta ?? parsed?.output_text ?? parsed?.text ?? parsed?.response?.output_text
-						const content = extractResponseText(delta)
-						if (content) {
-							controller.enqueue(encoder.encode(createSseChunk(content)))
-						}
-					}
-				}
-
-				buffer += decoder.decode()
-				if (buffer.trim()) {
-					for (const rawLine of buffer.split('\n')) {
-						const line = rawLine.trim()
-						if (!line.startsWith('data: ')) continue
-
-						const data = line.slice(6).trim()
-						if (!data || data === '[DONE]') continue
-
-						const parsed = tryParseJson(data) as any
-						const delta = parsed?.delta ?? parsed?.output_text ?? parsed?.text ?? parsed?.response?.output_text
-						const content = extractResponseText(delta)
-						if (content) {
-							controller.enqueue(encoder.encode(createSseChunk(content)))
-						}
-					}
-				}
-
-				controller.close()
-			} catch (error) {
-				controller.error(error)
-			} finally {
-				reader.releaseLock()
-			}
-		}
-	})
-
-	return createStreamResponse(transformed)
+	return createFilteredStreamResponse(source, extractResponsesOutputText)
 }
 
 async function fetchArkResponses(body: Record<string, unknown>) {
@@ -731,7 +788,7 @@ export async function POST(request: Request) {
 
 		if (plannedToolResults.length > 0) {
 			const response = await streamFinalAnswer(messagesWithSystem, plannedToolResults)
-			return createStreamResponse(response.body)
+			return createFilteredStreamResponse(response.body, extractChatCompletionText)
 		}
 
 		const response = await fetchArk({
@@ -740,7 +797,7 @@ export async function POST(request: Request) {
 			stream: true
 		})
 
-		return createStreamResponse(response.body)
+		return createFilteredStreamResponse(response.body, extractChatCompletionText)
 	} catch (error: any) {
 		if (error instanceof ArkUpstreamError) {
 			console.error('AI Chat Upstream Error:', error.details)

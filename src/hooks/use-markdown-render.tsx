@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement, Fragment } from 'react'
 import parse, { type HTMLReactParserOptions, Element, type DOMNode } from 'html-react-parser'
-import { renderMarkdown, type TocItem } from '@/lib/markdown-renderer'
+import { renderMarkdown, type MarkdownRenderOptions, type TocItem } from '@/lib/markdown-renderer'
 import { MarkdownImage } from '@/components/markdown-image'
 import { CodeBlock } from '@/components/code-block'
 
@@ -10,7 +10,8 @@ type MarkdownRenderResult = {
 	loading: boolean
 }
 
-export function useMarkdownRender(markdown: string): MarkdownRenderResult {
+export function useMarkdownRender(markdown: string, options: MarkdownRenderOptions = {}): MarkdownRenderResult {
+	const { disableStrikethrough = false } = options
 	const [content, setContent] = useState<ReactElement | null>(null)
 	const [toc, setToc] = useState<TocItem[]>([])
 	const [loading, setLoading] = useState<boolean>(true)
@@ -29,7 +30,7 @@ export function useMarkdownRender(markdown: string): MarkdownRenderResult {
 
 			setLoading(true)
 			try {
-				const { html, toc } = await renderMarkdown(markdown)
+				const { html, toc } = await renderMarkdown(markdown, { disableStrikethrough })
 				
 				if (!cancelled) {
 					// Extract pre elements and replace with placeholders before parsing
@@ -109,7 +110,7 @@ export function useMarkdownRender(markdown: string): MarkdownRenderResult {
 		return () => {
 			cancelled = true
 		}
-	}, [markdown])
+	}, [markdown, disableStrikethrough])
 
 	return { content, toc, loading }
 }

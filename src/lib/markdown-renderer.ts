@@ -1,4 +1,4 @@
-import { marked } from 'marked'
+import { Marked, marked } from 'marked'
 import type { Tokens } from 'marked'
 
 export type TocItem = { id: string; text: string; level: number }
@@ -56,18 +56,40 @@ async function loadKatex() {
 	}
 }
 
-export async function renderMarkdown(markdown: string): Promise<MarkdownRenderResult> {
+export interface MarkdownRenderOptions {
+	disableStrikethrough?: boolean
+}
+
+function escapeHtml(value: string) {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;')
+}
+
+export async function renderMarkdown(markdown: string, options: MarkdownRenderOptions = {}): Promise<MarkdownRenderResult> {
+	const markdownParser = options.disableStrikethrough ? new Marked() : marked
 	// Load optional renderers first so they apply on the FIRST lex/parse pass.
 	// (If we lex before registering extensions, math tokens won't ever be produced on a cold refresh.)
 	const codeBlockMap = new Map<string, { html: string; original: string }>()
 	const [shiki, katex] = await Promise.all([loadShiki(), loadKatex()])
 
 	// Render HTML with heading ids
-	const renderer = new marked.Renderer()
+	const renderer = new markdownParser.Renderer()
 
 	renderer.heading = (token: Tokens.Heading) => {
 		const id = slugify(token.text || '')
 		return `<h${token.depth} id="${id}">${token.text}</h${token.depth}>`
+	}
+
+	renderer.del = (token: Tokens.Del) => {
+		if (!options.disableStrikethrough) {
+			return `<del>${markdownParser.parser(token.tokens) as string}</del>`
+		}
+
+		return escapeHtml(token.raw)
 	}
 
 	renderer.code = (token: Tokens.Code) => {
@@ -94,7 +116,7 @@ export async function renderMarkdown(markdown: string): Promise<MarkdownRenderRe
 		let tokens = token.tokens
 
 		if (token.task) tokens = tokens.slice(1)
-		inner = marked.parser(tokens) as string
+		inner = markdownParser.parser(tokens) as string
 
 		if (token.task) {
 			const checkbox = token.checked ? '<input type="checkbox" checked disabled />' : '<input type="checkbox" disabled />'
@@ -123,7 +145,7 @@ export async function renderMarkdown(markdown: string): Promise<MarkdownRenderRe
 	}
 
 	// Register extensions BEFORE lexing so math gets tokenized on cold refresh.
-	marked.use({
+	markdownParser.use({
 		renderer,
 		extensions: [
 			// Block math: $$ ... $$
@@ -180,7 +202,7 @@ export async function renderMarkdown(markdown: string): Promise<MarkdownRenderRe
 	})
 
 	// Pre-process with marked lexer first (after extensions are registered)
-	const tokens = marked.lexer(markdown)
+	const tokens = markdownParser.lexer(markdown)
 
 	// Extract TOC from parsed tokens (this correctly skips code blocks)
 	const toc: TocItem[] = []
@@ -227,7 +249,7 @@ export async function renderMarkdown(markdown: string): Promise<MarkdownRenderRe
 			}
 		}
 	}
-	const html = (marked.parser(tokens) as string) || ''
+	const html = (markdownParser.parser(tokens) as string) || ''
 
 	return { html, toc }
 }
