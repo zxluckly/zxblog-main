@@ -34,6 +34,7 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 	const [imagePreview, setImagePreview] = useState('')
 	const [isLoading, setIsLoading] = useState(false)
 	const [isRecording, setIsRecording] = useState(false)
+	const [isSmartSearch, setIsSmartSearch] = useState(false)
 	const [recognition, setRecognition] = useState<any>(null)
 	const messagesEndRef = useRef<HTMLDivElement>(null)
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -254,7 +255,8 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
-					messages: newMessages
+					messages: newMessages,
+					mode: isSmartSearch ? 'smart_search' : 'chat'
 				})
 			})
 
@@ -466,6 +468,14 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 
 							{/* 工具栏 */}
 							<div className='flex items-center gap-2'>
+								<button
+									type='button'
+									onClick={() => setIsSmartSearch(v => !v)}
+									disabled={isLoading}
+									className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${isSmartSearch ? 'border-[var(--color-brand)] bg-[var(--color-brand)]/10 text-[var(--color-brand)]' : 'border-gray-200 bg-white/80 text-gray-600 hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]'}`}
+									title='切换智能搜索模式'>
+									{isSmartSearch ? '智能搜索已开' : '智能搜索'}
+								</button>
 								<input ref={fileInputRef} type='file' accept='image/*' onChange={handleImageUpload} className='hidden' />
 								<motion.button
 									onClick={() => fileInputRef.current?.click()}

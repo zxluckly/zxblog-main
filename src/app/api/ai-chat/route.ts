@@ -10,6 +10,8 @@ export const dynamic = 'force-dynamic'
 const ARK_API_KEY = process.env.ARK_API_KEY
 const ARK_MODEL = process.env.ARK_MODEL || 'ep-20250310111028-lvbvn'
 const ARK_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
+const ARK_RESPONSES_MODEL = process.env.ARK_RESPONSES_MODEL || 'ep-20260731234007-rrwxs'
+const ARK_RESPONSES_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses'
 
 type Project = {
 	name: string
@@ -260,12 +262,186 @@ function createStreamResponse(body: ReadableStream<Uint8Array> | null) {
 	})
 }
 
+function createJsonResponse(body: unknown, init?: ResponseInit) {
+	return new Response(JSON.stringify(body), {
+		...init,
+		headers: {
+			'Content-Type': 'application/json',
+			...(init?.headers || {})
+		}
+	})
+}
+
 function tryParseJson(value: string): unknown {
 	try {
 		return JSON.parse(value)
 	} catch {
 		return null
 	}
+}
+
+function extractResponseText(delta: unknown): string {
+	if (typeof delta === 'string') return delta
+
+	if (Array.isArray(delta)) {
+		return delta
+			.map(item => extractResponseText((item as any)?.text ?? (item as any)?.delta ?? item))
+			.join('')
+	}
+
+	if (delta && typeof delta === 'object') {
+		const record = delta as Record<string, unknown>
+		const text = record.text ?? record.delta ?? record.value
+		if (typeof text === 'string') return text
+		if (Array.isArray(text)) {
+			return text
+				.map(item => extractResponseText(item))
+				.join('')
+		}
+	}
+
+	return ''
+}
+
+function createSseChunk(content: string) {
+	return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`
+}
+
+async function streamArkResponses(body: Record<string, unknown>) {
+	const response = await fetch(ARK_RESPONSES_API_URL, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'Authorization': `Bearer ${ARK_API_KEY}`
+		},
+		body: JSON.stringify(body)
+	})
+
+	if (!response.ok) {
+		const errorText = await response.text()
+		const details: ArkUpstreamErrorDetails = {
+			status: response.status,
+			statusText: response.statusText,
+			body: errorText,
+			parsedBody: tryParseJson(errorText),
+			headers: {
+				contentType: response.headers.get('content-type'),
+				retryAfter: response.headers.get('retry-after'),
+				xRequestId: response.headers.get('x-request-id'),
+				xTraceId: response.headers.get('x-tt-logid') || response.headers.get('x-trace-id')
+			}
+		}
+
+		console.error('ARK Responses API Error:', details)
+		throw new ArkUpstreamError(details)
+	}
+
+	return response
+}
+
+function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null) {
+	if (!source) return createStreamResponse(null)
+
+	const decoder = new TextDecoder()
+	const encoder = new TextEncoder()
+	let buffer = ''
+
+	const transformed = new ReadableStream<Uint8Array>({
+		async start(controller) {
+			const reader = source.getReader()
+
+			try {
+				while (true) {
+					const { done, value } = await reader.read()
+					if (done) break
+
+					buffer += decoder.decode(value, { stream: true })
+					const lines = buffer.split('\n')
+					buffer = lines.pop() || ''
+
+					for (const rawLine of lines) {
+						const line = rawLine.trim()
+						if (!line.startsWith('data: ')) continue
+
+						const data = line.slice(6).trim()
+						if (!data || data === '[DONE]') continue
+
+						const parsed = tryParseJson(data) as any
+						const delta = parsed?.delta ?? parsed?.output_text ?? parsed?.text ?? parsed?.response?.output_text
+						const content = extractResponseText(delta)
+						if (content) {
+							controller.enqueue(encoder.encode(createSseChunk(content)))
+						}
+					}
+				}
+
+				buffer += decoder.decode()
+				if (buffer.trim()) {
+					for (const rawLine of buffer.split('\n')) {
+						const line = rawLine.trim()
+						if (!line.startsWith('data: ')) continue
+
+						const data = line.slice(6).trim()
+						if (!data || data === '[DONE]') continue
+
+						const parsed = tryParseJson(data) as any
+						const delta = parsed?.delta ?? parsed?.output_text ?? parsed?.text ?? parsed?.response?.output_text
+						const content = extractResponseText(delta)
+						if (content) {
+							controller.enqueue(encoder.encode(createSseChunk(content)))
+						}
+					}
+				}
+
+				controller.close()
+			} catch (error) {
+				controller.error(error)
+			} finally {
+				reader.releaseLock()
+			}
+		}
+	})
+
+	return createStreamResponse(transformed)
+}
+
+async function fetchArkResponses(body: Record<string, unknown>) {
+	return streamArkResponses(body)
+}
+
+function createResponsesInput(messages: ChatMessage[]) {
+	return messages.map(message => ({
+		role: message.role,
+		content: Array.isArray(message.content)
+			? message.content.map((item: any) => {
+				if (item?.type === 'image_url' && item.image_url?.url) {
+					return {
+						type: 'input_image',
+						image_url: item.image_url.url
+					}
+				}
+
+				if (item?.type === 'text' && typeof item.text === 'string') {
+					return {
+						type: 'input_text',
+						text: item.text
+					}
+				}
+
+				return item
+			})
+			: [{ type: 'input_text', text: String(message.content ?? '') }]
+	}))
+}
+
+async function streamResponsesAnswer(messages: ChatMessage[], instructions: string) {
+	return fetchArkResponses({
+		model: ARK_RESPONSES_MODEL,
+		instructions,
+		tools: [{ type: 'web_search' }],
+		stream: true,
+		input: createResponsesInput(messages)
+	})
 }
 
 function serializeUnknownError(error: unknown) {
@@ -454,6 +630,10 @@ const SYSTEM_PROMPT = `你是真寻，ZX 的网站助手。
 - 列表和链接要使用标准 Markdown 语法。
 - 禁止输出原始 HTML。`
 
+const SEARCH_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+当前处于智能搜索模式。必要时请使用 web_search 工具检索最新互联网信息。`
+
 export async function POST(request: Request) {
 	try {
 		// 1. 验证 API Key 配置
@@ -495,7 +675,7 @@ export async function POST(request: Request) {
 
 		// 4. 验证请求体
 		const body = await request.json()
-		const { messages } = body
+		const { messages, mode } = body as { messages?: unknown; mode?: string }
 
 		if (!messages || !Array.isArray(messages)) {
 			return NextResponse.json(
@@ -517,6 +697,7 @@ export async function POST(request: Request) {
 			content: message.content
 		}))
 
+		const isSearchMode = mode === 'smart_search'
 		const messagesWithSystem = [
 			{
 				role: 'system',
@@ -524,6 +705,19 @@ export async function POST(request: Request) {
 			},
 			...safeMessages
 		]
+
+		if (isSearchMode) {
+			console.log('Sending request to ARK Responses API:', {
+				model: ARK_RESPONSES_MODEL,
+				messageCount: safeMessages.length,
+				mode: 'smart_search',
+				clientId: clientId.slice(0, 20) + '...'
+			})
+
+			const response = await streamResponsesAnswer(safeMessages, SEARCH_SYSTEM_PROMPT)
+			return createResponsesStreamResponse(response.body)
+		}
+
 		const userText = getLastUserText(safeMessages)
 		const plannedToolResults = planRequiredTools(userText)
 
@@ -531,7 +725,8 @@ export async function POST(request: Request) {
 			model: ARK_MODEL,
 			messageCount: messagesWithSystem.length,
 			plannedToolCount: plannedToolResults.length,
-			clientId: clientId.slice(0, 20) + '...' // 只记录部分 ID
+			mode: 'chat',
+			clientId: clientId.slice(0, 20) + '...'
 		})
 
 		if (plannedToolResults.length > 0) {
@@ -539,7 +734,6 @@ export async function POST(request: Request) {
 			return createStreamResponse(response.body)
 		}
 
-		// 6. 没有命中确定事实意图时，恢复为单次直接流式响应，避免额外等待
 		const response = await fetchArk({
 			model: ARK_MODEL,
 			messages: messagesWithSystem,
@@ -550,12 +744,13 @@ export async function POST(request: Request) {
 	} catch (error: any) {
 		if (error instanceof ArkUpstreamError) {
 			console.error('AI Chat Upstream Error:', error.details)
+			const upstreamStatus = error.details.status ?? 502
 			return NextResponse.json(
 				{
 					error: error.message,
 					upstream: error.details
 				},
-				{ status: error.details.status >= 400 ? error.details.status : 502 }
+				{ status: upstreamStatus >= 400 ? upstreamStatus : 502 }
 			)
 		}
 

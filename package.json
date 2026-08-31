@@ -20,6 +20,7 @@
     "@opennextjs/cloudflare": "^1.14.4",
     "@types/jsrsasign": "^10.5.15",
     "@upstash/redis": "^1.36.2",
+    "@volcengine/ark-runtime": "^1.0.10",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.18",
     "html-react-parser": "^5.2.8",
