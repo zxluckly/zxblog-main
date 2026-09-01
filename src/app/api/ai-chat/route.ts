@@ -7,7 +7,6 @@ import siteContent from '@/config/site-content.json'
 // 使用 Node.js Runtime，避免 Edge Runtime 出网时的额外限制
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const preferredRegion = 'hnd1'
 
 const CF_ARK_PROXY_URL = process.env.CF_ARK_PROXY_URL
 const WORKER_SHARED_SECRET = process.env.WORKER_SHARED_SECRET
