@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
 import projects from '@/app/projects/list.json'
@@ -36,10 +37,24 @@ type ToolResult = {
 	result: unknown
 }
 
+type ChatContentItem =
+	| {
+			type: 'text'
+			text: string
+	  }
+	| {
+			type: 'image_url'
+			image_url: { url: string }
+	  }
+
 type ChatMessage = {
-	role: string
-	content: unknown
-	[key: string]: unknown
+	role: 'user' | 'assistant'
+	content: string | ChatContentItem[]
+}
+
+type ChatRequest = {
+	messages: ChatMessage[]
+	mode: 'chat' | 'smart_search'
 }
 
 type SearchUserLocation = {
@@ -82,21 +97,32 @@ class ArkUpstreamError extends Error {
 const projectList = projects as Project[]
 
 // 初始化 Redis 客户端
-const redis = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
-	? new Redis({
-			url: process.env.KV_REST_API_URL,
-			token: process.env.KV_REST_API_TOKEN,
-		})
-	: null
+const redis =
+	process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
+		? new Redis({
+				url: process.env.KV_REST_API_URL,
+				token: process.env.KV_REST_API_TOKEN
+			})
+		: null
 
 // 速率限制配置
 const RATE_LIMIT = {
 	PER_MINUTE: 10, // 每分钟最多 10 次请求
 	PER_DAY: 100, // 每天最多 100 次请求
-	MAX_MESSAGES: 20 // 单次对话最多 20 轮
+	MAX_MESSAGES: 20, // 单次对话最多 20 轮
+	MAX_REQUEST_BYTES: 10 * 1024 * 1024,
+	MAX_TOTAL_TEXT_LENGTH: 30_000,
+	MAX_MESSAGE_TEXT_LENGTH: 8_000,
+	MAX_CONTENT_ITEMS_PER_MESSAGE: 4,
+	MAX_IMAGES_PER_REQUEST: 2,
+	MAX_IMAGE_BYTES: 5 * 1024 * 1024,
+	MAX_TOTAL_IMAGE_BYTES: 7 * 1024 * 1024
 }
 
 const RATE_LIMIT_PREFIX = 'ai-chat:ratelimit:'
+const ALLOWED_MESSAGE_ROLES = new Set<ChatMessage['role']>(['user', 'assistant'])
+const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const ALLOWED_ORIGIN_HOSTS = new Set(['localhost', '127.0.0.1', 'zxluky.asia', 'www.zxluky.asia', 'zxlucky.top', 'www.zxlucky.top'])
 
 function normalizeText(value: string): string {
 	return value.toLowerCase().replace(/\s+/g, '')
@@ -174,13 +200,7 @@ function getProjectDetail(query: string) {
 	}
 
 	const contentMatches = projectList.filter(project => {
-		const searchable = normalizeText([
-			project.name,
-			project.description,
-			project.github || '',
-			project.url || '',
-			...(project.tags || [])
-		].join(' '))
+		const searchable = normalizeText([project.name, project.description, project.github || '', project.url || '', ...(project.tags || [])].join(' '))
 
 		return searchable.includes(normalizedQuery)
 	})
@@ -197,9 +217,8 @@ function getProjectDetail(query: string) {
 
 	return {
 		status: candidates.length > 0 ? 'multiple_matches' : 'not_found',
-		message: candidates.length > 0
-			? '找到了多个可能匹配的项目，请让用户指定更准确的项目名称；不要自行选择。'
-			: '未找到匹配项目，请让用户换一个项目名称或关键词。',
+		message:
+			candidates.length > 0 ? '找到了多个可能匹配的项目，请让用户指定更准确的项目名称；不要自行选择。' : '未找到匹配项目，请让用户换一个项目名称或关键词。',
 		candidates: candidates.map(getProjectSummary),
 		allProjects: projectList.map(project => ({
 			name: project.name,
@@ -275,7 +294,7 @@ function createStreamResponse(body: ReadableStream<Uint8Array> | null) {
 		headers: {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',
-			'Connection': 'keep-alive'
+			Connection: 'keep-alive'
 		}
 	})
 }
@@ -421,9 +440,7 @@ function extractResponseText(delta: unknown): string {
 	if (typeof delta === 'string') return delta
 
 	if (Array.isArray(delta)) {
-		return delta
-			.map(item => extractResponseText((item as any)?.text ?? (item as any)?.delta ?? item))
-			.join('')
+		return delta.map(item => extractResponseText((item as any)?.text ?? (item as any)?.delta ?? item)).join('')
 	}
 
 	if (delta && typeof delta === 'object') {
@@ -431,9 +448,7 @@ function extractResponseText(delta: unknown): string {
 		const text = record.text ?? record.delta ?? record.value
 		if (typeof text === 'string') return text
 		if (Array.isArray(text)) {
-			return text
-				.map(item => extractResponseText(item))
-				.join('')
+			return text.map(item => extractResponseText(item)).join('')
 		}
 	}
 
@@ -450,6 +465,91 @@ function createSseEvent(event: string, data: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getDataUrlByteLength(value: string): number | null {
+	const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value)
+	if (!match || !ALLOWED_IMAGE_MIME_TYPES.has(match[1].toLowerCase())) return null
+
+	const encoded = match[2]
+	const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0
+	return (encoded.length / 4) * 3 - padding
+}
+
+function validateChatRequest(body: unknown): { request?: ChatRequest; error?: string } {
+	if (!isRecord(body) || !Array.isArray(body.messages)) {
+		return { error: '无效的消息格式' }
+	}
+
+	if (body.messages.length === 0 || body.messages.length > RATE_LIMIT.MAX_MESSAGES) {
+		return { error: `对话轮数必须在 1 到 ${RATE_LIMIT.MAX_MESSAGES} 之间` }
+	}
+
+	if (body.mode !== 'chat' && body.mode !== 'smart_search') {
+		return { error: '无效的对话模式' }
+	}
+
+	let totalTextLength = 0
+	let imageCount = 0
+	let totalImageBytes = 0
+	const messages: ChatMessage[] = []
+
+	for (const rawMessage of body.messages) {
+		if (!isRecord(rawMessage) || !ALLOWED_MESSAGE_ROLES.has(rawMessage.role as ChatMessage['role'])) {
+			return { error: '消息角色无效' }
+		}
+
+		const role = rawMessage.role as ChatMessage['role']
+		const { content } = rawMessage
+		if (typeof content === 'string') {
+			if (!content.trim() || content.length > RATE_LIMIT.MAX_MESSAGE_TEXT_LENGTH) {
+				return { error: '消息文本长度超出限制' }
+			}
+			totalTextLength += content.length
+			messages.push({ role, content })
+			continue
+		}
+
+		if (!Array.isArray(content) || content.length === 0 || content.length > RATE_LIMIT.MAX_CONTENT_ITEMS_PER_MESSAGE) {
+			return { error: '消息内容格式无效' }
+		}
+
+		const items: ChatContentItem[] = []
+		for (const rawItem of content) {
+			if (!isRecord(rawItem)) return { error: '消息内容格式无效' }
+
+			if (rawItem.type === 'text' && typeof rawItem.text === 'string') {
+				if (!rawItem.text.trim() || rawItem.text.length > RATE_LIMIT.MAX_MESSAGE_TEXT_LENGTH) {
+					return { error: '消息文本长度超出限制' }
+				}
+				totalTextLength += rawItem.text.length
+				items.push({ type: 'text', text: rawItem.text })
+				continue
+			}
+
+			if (rawItem.type === 'image_url' && isRecord(rawItem.image_url) && typeof rawItem.image_url.url === 'string') {
+				const imageBytes = getDataUrlByteLength(rawItem.image_url.url)
+				if (imageBytes === null || imageBytes > RATE_LIMIT.MAX_IMAGE_BYTES) {
+					return { error: '图片格式或大小超出限制' }
+				}
+				imageCount += 1
+				totalImageBytes += imageBytes
+				items.push({ type: 'image_url', image_url: { url: rawItem.image_url.url } })
+				continue
+			}
+
+			return { error: '消息内容格式无效' }
+		}
+
+		messages.push({ role, content: items })
+	}
+
+	if (totalTextLength > RATE_LIMIT.MAX_TOTAL_TEXT_LENGTH) return { error: '消息总文本长度超出限制' }
+	if (imageCount > RATE_LIMIT.MAX_IMAGES_PER_REQUEST || totalImageBytes > RATE_LIMIT.MAX_TOTAL_IMAGE_BYTES) {
+		return { error: '图片数量或总大小超出限制' }
+	}
+
+	return { request: { messages, mode: body.mode } }
 }
 
 function getString(value: unknown, maxLength = 120): string | undefined {
@@ -492,7 +592,7 @@ async function streamArkResponses(body: Record<string, unknown>) {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			'Authorization': `Bearer ${ARK_API_KEY}`
+			Authorization: `Bearer ${ARK_API_KEY}`
 		},
 		signal: AbortSignal.timeout(ARK_REQUEST_TIMEOUT_MS),
 		body: JSON.stringify(body)
@@ -530,12 +630,13 @@ function getSearchUsage(parsed: unknown) {
 	const toolUsageDetails = isRecord(usage.tool_usage_details) ? usage.tool_usage_details : null
 	const rawWebSearchDetails = toolUsageDetails?.web_search
 	const webSearchDetails = isRecord(rawWebSearchDetails)
-		? Object.fromEntries(Object.entries(rawWebSearchDetails)
-			.filter(([key, value]) => ['count', 'total'].includes(key) && (typeof value === 'number' || typeof value === 'boolean')))
+		? Object.fromEntries(
+				Object.entries(rawWebSearchDetails).filter(
+					([key, value]) => ['count', 'total'].includes(key) && (typeof value === 'number' || typeof value === 'boolean')
+				)
+			)
 		: undefined
-	const webSearch = typeof toolUsage?.web_search === 'number' && Number.isFinite(toolUsage.web_search)
-		? toolUsage.web_search
-		: null
+	const webSearch = typeof toolUsage?.web_search === 'number' && Number.isFinite(toolUsage.web_search) ? toolUsage.web_search : null
 
 	return {
 		webSearch,
@@ -598,12 +699,14 @@ function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null
 				if (usage && !emittedUsage) {
 					emittedUsage = true
 					logSearchTelemetry('completed', telemetry, usage)
-					enqueue(createSseEvent('usage', {
-						type: 'usage',
-						webSearch: usage.webSearch,
-						details: usage.details,
-						detailsAvailable: usage.hasDetails
-					}))
+					enqueue(
+						createSseEvent('usage', {
+							type: 'usage',
+							webSearch: usage.webSearch,
+							details: usage.details,
+							detailsAvailable: usage.hasDetails
+						})
+					)
 					enqueue(createSseEvent('status', { phase: 'completed' }))
 				}
 
@@ -656,22 +759,22 @@ function createResponsesInput(messages: ChatMessage[]) {
 		role: message.role,
 		content: Array.isArray(message.content)
 			? message.content.map((item: any) => {
-				if (item?.type === 'image_url' && item.image_url?.url) {
-					return {
-						type: 'input_image',
-						image_url: item.image_url.url
+					if (item?.type === 'image_url' && item.image_url?.url) {
+						return {
+							type: 'input_image',
+							image_url: item.image_url.url
+						}
 					}
-				}
 
-				if (item?.type === 'text' && typeof item.text === 'string') {
-					return {
-						type: 'input_text',
-						text: item.text
+					if (item?.type === 'text' && typeof item.text === 'string') {
+						return {
+							type: 'input_text',
+							text: item.text
+						}
 					}
-				}
 
-				return item
-			})
+					return item
+				})
 			: [{ type: 'input_text', text: String(message.content ?? '') }]
 	}))
 }
@@ -680,12 +783,14 @@ async function streamResponsesAnswer(messages: ChatMessage[], instructions: stri
 	return fetchArkResponses({
 		model: ARK_RESPONSES_MODEL,
 		instructions,
-		tools: [{
-			type: 'web_search',
-			max_keyword: WEB_SEARCH_MAX_KEYWORD,
-			limit: WEB_SEARCH_LIMIT,
-			...(location ? { user_location: location } : {})
-		}],
+		tools: [
+			{
+				type: 'web_search',
+				max_keyword: WEB_SEARCH_MAX_KEYWORD,
+				limit: WEB_SEARCH_LIMIT,
+				...(location ? { user_location: location } : {})
+			}
+		],
 		max_tool_calls: MAX_SEARCH_TOOL_CALLS,
 		stream: true,
 		input: createResponsesInput(messages)
@@ -715,7 +820,7 @@ async function fetchArk(body: Record<string, unknown>) {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${ARK_API_KEY}`
+				Authorization: `Bearer ${ARK_API_KEY}`
 			},
 			body: JSON.stringify(body)
 		})
@@ -752,7 +857,7 @@ function createFactInstruction(toolResults: ToolResult[]) {
 	return `以下是服务端工具返回的唯一可信事实源。你可以总结和组织语言，但事实值必须逐字符引用，尤其是项目名、年份、邮箱、QQ、GitHub、URL、技术栈。缺失字段为 null 时只能说“源数据未提供”，禁止补全或猜测。请输出合法 Markdown，禁止输出原始 HTML。\n\n${JSON.stringify(toolResults, null, 2)}`
 }
 
-async function streamFinalAnswer(messages: ChatMessage[], toolResults: ToolResult[]) {
+async function streamFinalAnswer(messages: Array<ChatMessage | { role: 'system'; content: string }>, toolResults: ToolResult[]) {
 	return fetchArk({
 		model: ARK_MODEL,
 		messages: [
@@ -766,99 +871,80 @@ async function streamFinalAnswer(messages: ChatMessage[], toolResults: ToolResul
 	})
 }
 
-// 获取客户端标识（IP + User Agent）
+// 获取客户端标识。Cloudflare 会在边缘覆盖 CF-Connecting-IP；仅在显式配置的可信代理后读取转发头。
 function getClientId(request: Request): string {
-	const forwarded = request.headers.get('x-forwarded-for')
-	const ip = forwarded ? forwarded.split(',')[0] : request.headers.get('x-real-ip') || 'unknown'
+	const cloudflareIp = request.headers.get('cf-connecting-ip')
+	const trustedProxyIp =
+		process.env.TRUST_PROXY_HEADERS === 'true' ? request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() : null
+	const ip = cloudflareIp || trustedProxyIp || 'unknown'
 	const userAgent = request.headers.get('user-agent') || 'unknown'
-	return `${ip}-${userAgent.slice(0, 50)}` // 限制长度避免过长
+	return createHash('sha256')
+		.update(`${ip}\n${userAgent.slice(0, 200)}`)
+		.digest('hex')
 }
 
-// 检查速率限制（使用 Redis）
+const RATE_LIMIT_SCRIPT = `
+local minuteCount = tonumber(redis.call('GET', KEYS[1]) or '0')
+local dayCount = tonumber(redis.call('GET', KEYS[2]) or '0')
+local minuteLimit = tonumber(ARGV[1])
+local dayLimit = tonumber(ARGV[2])
+local minuteTtl = tonumber(ARGV[3])
+local dayTtl = tonumber(ARGV[4])
+
+if dayCount >= dayLimit then
+	return {0, redis.call('TTL', KEYS[2])}
+end
+if minuteCount >= minuteLimit then
+	return {0, redis.call('TTL', KEYS[1])}
+end
+
+local nextMinute = redis.call('INCR', KEYS[1])
+if nextMinute == 1 then redis.call('EXPIRE', KEYS[1], minuteTtl) end
+local nextDay = redis.call('INCR', KEYS[2])
+if nextDay == 1 then redis.call('EXPIRE', KEYS[2], dayTtl) end
+return {1, 0}
+`
+
+// 检查速率限制。脚本将读取、判断、递增和过期时间设置合并为一个 Redis 原子操作。
 async function checkRateLimit(clientId: string): Promise<{ allowed: boolean; retryAfter?: number }> {
-	// 如果 Redis 不可用，回退到宽松模式（仅做基本验证）
 	if (!redis) {
-		console.warn('Redis not available, rate limiting disabled')
-		return { allowed: true }
+		console.error('Redis not available, rejecting AI chat request')
+		return { allowed: false, retryAfter: 60 }
 	}
 
 	const minuteKey = `${RATE_LIMIT_PREFIX}minute:${clientId}`
 	const dayKey = `${RATE_LIMIT_PREFIX}day:${clientId}`
 
 	try {
-		// 检查每日限制
-		const dailyCount = await redis.get<number>(dayKey) || 0
-		if (dailyCount >= RATE_LIMIT.PER_DAY) {
-			const ttl = await redis.ttl(dayKey)
-			return { allowed: false, retryAfter: ttl > 0 ? ttl : 86400 }
-		}
-
-		// 检查每分钟限制
-		const minuteCount = await redis.get<number>(minuteKey) || 0
-		if (minuteCount >= RATE_LIMIT.PER_MINUTE) {
-			const ttl = await redis.ttl(minuteKey)
-			return { allowed: false, retryAfter: ttl > 0 ? ttl : 60 }
-		}
-
-		// 增加计数
-		const pipeline = redis.pipeline()
-
-		// 每分钟计数
-		if (minuteCount === 0) {
-			pipeline.set(minuteKey, 1, { ex: 60 })
-		} else {
-			pipeline.incr(minuteKey)
-		}
-
-		// 每日计数
-		if (dailyCount === 0) {
-			pipeline.set(dayKey, 1, { ex: 86400 })
-		} else {
-			pipeline.incr(dayKey)
-		}
-
-		await pipeline.exec()
-
-		return { allowed: true }
+		const result = await redis.eval<[number, number, number, number], [number, number]>(
+			RATE_LIMIT_SCRIPT,
+			[minuteKey, dayKey],
+			[RATE_LIMIT.PER_MINUTE, RATE_LIMIT.PER_DAY, 60, 86400]
+		)
+		const [allowed, ttl] = result
+		return allowed === 1 ? { allowed: true } : { allowed: false, retryAfter: ttl > 0 ? ttl : 60 }
 	} catch (error) {
 		console.error('Rate limit check error:', error)
-		// Redis 错误时允许请求通过，避免服务完全不可用
-		return { allowed: true }
+		return { allowed: false, retryAfter: 60 }
+	}
+}
+
+function isAllowedOriginUrl(value: string): boolean {
+	try {
+		const url = new URL(value)
+		return (url.protocol === 'http:' || url.protocol === 'https:') && ALLOWED_ORIGIN_HOSTS.has(url.hostname)
+	} catch {
+		return false
 	}
 }
 
 // 验证请求来源
 function validateOrigin(request: Request): boolean {
 	const origin = request.headers.get('origin')
+	if (origin) return isAllowedOriginUrl(origin)
+
 	const referer = request.headers.get('referer')
-
-	// 允许的域名列表
-	const allowedDomains = [
-		'localhost',
-		'127.0.0.1',
-		'zxluky.asia',
-		'www.zxluky.asia',
-		'zxlucky.top',
-		'www.zxlucky.top'
-	]
-
-	// 检查 origin
-	if (origin) {
-		const originUrl = new URL(origin)
-		if (allowedDomains.some(domain => originUrl.hostname.includes(domain))) {
-			return true
-		}
-	}
-
-	// 检查 referer
-	if (referer) {
-		const refererUrl = new URL(referer)
-		if (allowedDomains.some(domain => refererUrl.hostname.includes(domain))) {
-			return true
-		}
-	}
-
-	return false
+	return Boolean(referer && isAllowedOriginUrl(referer))
 }
 
 const SYSTEM_PROMPT = `你是真寻，ZX 的网站助手。
@@ -887,19 +973,13 @@ export async function POST(request: Request) {
 		// 1. 验证 API Key 配置
 		if (!ARK_API_KEY) {
 			console.error('ARK_API_KEY not configured')
-			return NextResponse.json(
-				{ error: 'ARK_API_KEY 未配置，请在环境变量中设置' },
-				{ status: 500 }
-			)
+			return NextResponse.json({ error: 'ARK_API_KEY 未配置，请在环境变量中设置' }, { status: 500 })
 		}
 
 		// 2. 验证请求来源
 		if (!validateOrigin(request)) {
 			console.warn('Invalid origin:', request.headers.get('origin'))
-			return NextResponse.json(
-				{ error: '无效的请求来源' },
-				{ status: 403 }
-			)
+			return NextResponse.json({ error: '无效的请求来源' }, { status: 403 })
 		}
 
 		// 3. 检查速率限制
@@ -922,31 +1002,25 @@ export async function POST(request: Request) {
 		}
 
 		// 4. 验证请求体
-		const body = await request.json()
-		const { messages, mode } = body as { messages?: unknown; mode?: string }
-
-		if (!messages || !Array.isArray(messages)) {
-			return NextResponse.json(
-				{ error: '无效的消息格式' },
-				{ status: 400 }
-			)
+		const contentLength = Number(request.headers.get('content-length') || 0)
+		if (Number.isFinite(contentLength) && contentLength > RATE_LIMIT.MAX_REQUEST_BYTES) {
+			return NextResponse.json({ error: '请求体大小超出限制' }, { status: 413 })
 		}
 
-		// 5. 限制消息数量
-		if (messages.length > RATE_LIMIT.MAX_MESSAGES) {
-			return NextResponse.json(
-				{ error: `对话轮数超过限制（最多 ${RATE_LIMIT.MAX_MESSAGES} 轮）` },
-				{ status: 400 }
-			)
+		const rawBody = await request.text()
+		if (Buffer.byteLength(rawBody, 'utf8') > RATE_LIMIT.MAX_REQUEST_BYTES) {
+			return NextResponse.json({ error: '请求体大小超出限制' }, { status: 413 })
 		}
 
-		const safeMessages = messages.map((message: ChatMessage) => ({
-			role: message.role,
-			content: message.content
-		}))
+		const body = tryParseJson(rawBody)
+		const validation = validateChatRequest(body)
+		if (!validation.request) {
+			return NextResponse.json({ error: validation.error || '无效的消息格式' }, { status: 400 })
+		}
 
+		const { messages: safeMessages, mode } = validation.request
 		const isSearchMode = mode === 'smart_search'
-		const messagesWithSystem = [
+		const messagesWithSystem: Array<ChatMessage | { role: 'system'; content: string }> = [
 			{
 				role: 'system',
 				content: SYSTEM_PROMPT
@@ -1012,9 +1086,6 @@ export async function POST(request: Request) {
 		}
 
 		console.error('AI Chat Error:', serializeUnknownError(error))
-		return NextResponse.json(
-			{ error: error instanceof Error ? error.message : '服务器错误' },
-			{ status: 500 }
-		)
+		return NextResponse.json({ error: error instanceof Error ? error.message : '服务器错误' }, { status: 500 })
 	}
 }
