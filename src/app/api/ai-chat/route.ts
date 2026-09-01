@@ -8,12 +8,11 @@ import siteContent from '@/config/site-content.json'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const CF_ARK_PROXY_URL = process.env.CF_ARK_PROXY_URL
-const WORKER_SHARED_SECRET = process.env.WORKER_SHARED_SECRET
+const ARK_API_KEY = process.env.ARK_API_KEY
 const ARK_MODEL = process.env.ARK_MODEL || 'ep-20260831230602-26bn4'
-const ARK_API_PATH = '/api/v3/chat/completions'
+const ARK_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
 const ARK_RESPONSES_MODEL = process.env.ARK_RESPONSES_MODEL || 'ep-20260831230602-26bn4'
-const ARK_RESPONSES_API_PATH = '/api/v3/responses'
+const ARK_RESPONSES_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses'
 const ENABLE_SEARCH_USER_LOCATION = process.env.ENABLE_SEARCH_USER_LOCATION !== 'false'
 const ARK_REQUEST_TIMEOUT_MS = 90_000
 const WEB_SEARCH_MAX_KEYWORD = 2
@@ -588,37 +587,16 @@ function logSearchTelemetry(event: string, telemetry: SearchTelemetry, fields: R
 	})
 }
 
-function getArkProxyUrl(path: string): string {
-	if (!CF_ARK_PROXY_URL) throw new Error('CF_ARK_PROXY_URL 未配置，请在环境变量中设置')
-
-	const proxyUrl = new URL(CF_ARK_PROXY_URL)
-	if (proxyUrl.pathname !== '/' && proxyUrl.pathname !== '') {
-		throw new Error('CF_ARK_PROXY_URL 必须是 Worker 根地址，不能包含 API 路径')
-	}
-
-	proxyUrl.pathname = path
-	proxyUrl.search = ''
-	proxyUrl.hash = ''
-	return proxyUrl.toString()
-}
-
-async function fetchArkProxy(path: string, body: Record<string, unknown>, signal?: AbortSignal) {
-	if (!WORKER_SHARED_SECRET) throw new Error('WORKER_SHARED_SECRET 未配置，请在环境变量中设置')
-
-	return fetch(getArkProxyUrl(path), {
+async function streamArkResponses(body: Record<string, unknown>) {
+	const response = await fetch(ARK_RESPONSES_API_URL, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			Accept: 'text/event-stream',
-			'x-worker-secret': WORKER_SHARED_SECRET
+			Authorization: `Bearer ${ARK_API_KEY}`
 		},
-		signal,
+		signal: AbortSignal.timeout(ARK_REQUEST_TIMEOUT_MS),
 		body: JSON.stringify(body)
 	})
-}
-
-async function streamArkResponses(body: Record<string, unknown>) {
-	const response = await fetchArkProxy(ARK_RESPONSES_API_PATH, body, AbortSignal.timeout(ARK_REQUEST_TIMEOUT_MS))
 
 	if (!response.ok) {
 		const errorText = await response.text()
@@ -838,7 +816,14 @@ function serializeUnknownError(error: unknown) {
 
 async function fetchArk(body: Record<string, unknown>) {
 	try {
-		const response = await fetchArkProxy(ARK_API_PATH, body)
+		const response = await fetch(ARK_API_URL, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${ARK_API_KEY}`
+			},
+			body: JSON.stringify(body)
+		})
 
 		if (!response.ok) {
 			const errorText = await response.text()
@@ -985,10 +970,10 @@ const SEARCH_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
 
 export async function POST(request: Request) {
 	try {
-		// 1. 验证 Worker 代理配置
-		if (!CF_ARK_PROXY_URL || !WORKER_SHARED_SECRET) {
-			console.error('CF ARK proxy not configured')
-			return NextResponse.json({ error: 'CF ARK 代理未配置，请设置 CF_ARK_PROXY_URL 和 WORKER_SHARED_SECRET' }, { status: 500 })
+		// 1. 验证 API Key 配置
+		if (!ARK_API_KEY) {
+			console.error('ARK_API_KEY not configured')
+			return NextResponse.json({ error: 'ARK_API_KEY 未配置，请在环境变量中设置' }, { status: 500 })
 		}
 
 		// 2. 验证请求来源
