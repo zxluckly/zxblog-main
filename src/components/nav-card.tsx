@@ -47,18 +47,18 @@ const list = [
 		label: '关于我的',
 		href: '/about'
 	},
-	{
-		icon: ShareOutlineSVG,
-		iconActive: ShareFilledSVG,
-		label: '推荐分享',
-		href: '/share'
-	},
 	// {
-	// 	icon: WebsiteOutlineSVG,
-	// 	iconActive: WebsiteFilledSVG,
-	// 	label: '优秀博客',
-	// 	href: '/bloggers'
+	// 	icon: ShareOutlineSVG,
+	// 	iconActive: ShareFilledSVG,
+	// 	label: '推荐分享',
+	// 	href: '/share'
 	// },
+	{
+		icon: WebsiteOutlineSVG,
+		iconActive: WebsiteFilledSVG,
+		label: '站点介绍',
+		href: '/rhine-lab'
+	},
 	{
 		icon: VideosOutlineSVG,
 		iconActive: VideosFilledSVG,

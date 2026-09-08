@@ -1,0 +1,18 @@
+﻿RHINE LAB · INTERNAL DATABASE
+FILE X-004 / 个人技术博客
+TECH BLOG SYSTEM
+
+科室：前端开发科
+编目范围：持续更新中
+相关人物：Next.js 16 + React 19
+访问范围：OPEN ACCESS
+
+基于Next.js 16和React 19构建的现代化技术博客。采用App Router架构，支持Markdown文章渲染、代码高亮、数学公式展示。集成项目展示、关于我、留言板等模块，记录技术成长的点点滴滴。
+
+研究记录
+1. 使用Next.js 16最新特性，实现服务端渲染与静态生成
+2. 集成Motion动画库，打造流畅的交互体验
+3. 采用Tailwind CSS 4构建响应式界面，支持多端适配
+
+设定参考：https://www.zxluky.asia
+本文为基于公开设定的档案式改写，非游戏原文。

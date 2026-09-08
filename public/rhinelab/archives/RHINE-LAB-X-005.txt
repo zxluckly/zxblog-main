@@ -1,0 +1,18 @@
+﻿RHINE LAB · INTERNAL DATABASE
+FILE X-005 / 技术栈概览
+TECH STACK OVERVIEW
+
+科室：技术储备科
+编目范围：持续学习中
+相关人物：全栈开发
+访问范围：REFERENCE AREA
+
+涵盖前端、后端、数据库、AI/ML、工具部署等多个领域的技术栈。前端掌握Vue、React、TypeScript等现代框架；后端熟悉Python、Java、Node.js；具备机器学习和计算机视觉项目经验；熟练使用Git、Docker等开发工具。
+
+研究记录
+1. 前端框架：Vue.js、React、Next.js、TypeScript、Tailwind CSS
+2. 后端技术：Python、Django、Flask、Java、Spring Boot、Node.js
+3. AI/数据：PyTorch、YOLO、OpenCV、MySQL、Redis、Hadoop
+
+设定参考：https://www.zxluky.asia/about
+本文为基于公开设定的档案式改写，非游戏原文。

@@ -1,0 +1,18 @@
+﻿RHINE LAB · INTERNAL DATABASE
+FILE X-009 / 机器学习探索
+MACHINE LEARNING JOURNEY
+
+科室：AI研究科
+编目范围：探索进行中
+相关人物：从理论到实践
+访问范围：REFERENCE AREA
+
+从传统机器学习到深度学习，逐步深入AI领域。实践过分类、回归、目标检测等多种任务。熟悉PyTorch框架，掌握YOLO、CNN等经典模型。相信AI不仅是算法的堆砌，更需要对问题本质的理解。
+
+研究记录
+1. 传统ML：熟悉逻辑回归、随机森林、SVM、XGBoost等算法
+2. 深度学习：实践过CNN图像分类、YOLO目标检测
+3. 模型优化：网格搜索调参、数据增强、模型集成
+
+设定参考：https://www.zxluky.asia/projects
+本文为基于公开设定的档案式改写，非游戏原文。
