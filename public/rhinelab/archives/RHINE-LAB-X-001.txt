@@ -1,18 +1,18 @@
 ﻿RHINE LAB · INTERNAL DATABASE
-FILE X-001 / 慢性病风险预测系统
-CHRONIC DISEASE PREDICTION
+FILE X-001 / 个人简介
+ABOUT ME
 
-科室：AI医疗科
-编目范围：2026年开发
-相关人物：Django + Vue + ML
-访问范围：OPEN SOURCE
+科室：个人档案科
+编目范围：持续更新中
+相关人物：全栈开发者
+访问范围：OPEN ACCESS
 
-基于机器学习的慢性病风险预测平台，面向糖尿病和高血压两种常见慢性病。通过采集用户健康数据，利用多种机器学习模型进行风险评估，输出风险等级与个性化健康建议，辅助健康管理与决策。
+作为刚踏入技术分享领域的新人，这里是我用心搭建的小小技术窝。不追求多华丽的表达，只希望把踩过的坑、学到的知识点慢慢记录下来，用文字和实用的内容，和同样在路上的你一起成长。当然了我平时除了写代码，也喜欢追番、打游戏，还爱捣鼓一些稀奇古怪的小玩意儿。
 
 研究记录
-1. 集成四种机器学习模型：逻辑回归、随机森林、SVM、XGBoost进行对比
-2. 实现网格搜索自动调优，模型准确率达到较高水平
-3. 提供个人数据面板、预测历史、健康数据管理等完整功能
+1. 前端框架：Vue.js、React、Next.js、TypeScript、Tailwind CSS
+2. 后端技术：Python、Django、Flask、Java、Spring Boot、Node.js
+3. AI/数据：PyTorch、YOLO、OpenCV、MySQL、Redis、Hadoop
 
-设定参考：https://github.com/zxluckly/disease_prediction
+设定参考：https://www.zxluky.asia/about
 本文为基于公开设定的档案式改写，非游戏原文。

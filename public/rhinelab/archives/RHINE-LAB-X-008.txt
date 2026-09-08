@@ -1,18 +1,18 @@
 ﻿RHINE LAB · INTERNAL DATABASE
-FILE X-008 / 后端架构设计
-BACKEND ARCHITECTURE
+FILE X-008 / 社交网络分析工具
+SOCIAL NETWORK ANALYSIS
 
-科室：后端架构科
-编目范围：实战经验
-相关人物：RESTful API设计
+科室：项目展示科
+编目范围：2025年
+相关人物：Spring Boot + Neo4j
 访问范围：REFERENCE AREA
 
-在Django和Spring Boot项目中积累了丰富的后端开发经验。熟悉RESTful API设计规范，掌握数据库优化、缓存策略、异步任务等后端核心技术。注重接口安全性与性能优化，善于设计可扩展的后端架构。
+本项目是一个基于Spring Boot和Neo4j的社交网络分析工具，旨在通过收集、分析和可视化社交媒体数据，帮助用户理解社交网络中的关系、情感倾向和热点话题。项目采用前后端分离架构，后端基于若依(RuoYi)框架开发，前端使用Vue3和Element Plus。
 
 研究记录
-1. API设计：遵循RESTful规范，提供清晰的接口文档
-2. 数据库优化：索引设计、查询优化、读写分离
-3. 缓存策略：合理使用Redis，提升系统响应速度
+1. 使用Neo4j图数据库存储和分析社交网络关系
+2. 实现情感分析和热点话题挖掘功能
+3. 基于若依框架快速构建后台管理系统
 
-设定参考：https://www.zxluky.asia
+设定参考：https://www.zxluky.asia/projects
 本文为基于公开设定的档案式改写，非游戏原文。

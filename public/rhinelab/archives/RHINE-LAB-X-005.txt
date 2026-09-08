@@ -1,18 +1,18 @@
 ﻿RHINE LAB · INTERNAL DATABASE
-FILE X-005 / 技术栈概览
-TECH STACK OVERVIEW
+FILE X-005 / 慢性病风险预测系统
+CHRONIC DISEASE PREDICTION
 
-科室：技术储备科
-编目范围：持续学习中
-相关人物：全栈开发
-访问范围：REFERENCE AREA
+科室：项目展示科
+编目范围：2026年
+相关人物：Django + Vue + ML
+访问范围：OPEN SOURCE
 
-涵盖前端、后端、数据库、AI/ML、工具部署等多个领域的技术栈。前端掌握Vue、React、TypeScript等现代框架；后端熟悉Python、Java、Node.js；具备机器学习和计算机视觉项目经验；熟练使用Git、Docker等开发工具。
+本系统是一个基于机器学习的慢性病风险预测平台，面向糖尿病和高血压两种常见慢性病，通过采集用户健康数据，利用多种机器学习模型进行风险评估，输出风险等级（低/中/高）与个性化健康建议，辅助用户和医护人员进行健康管理与决策。
 
 研究记录
-1. 前端框架：Vue.js、React、Next.js、TypeScript、Tailwind CSS
-2. 后端技术：Python、Django、Flask、Java、Spring Boot、Node.js
-3. AI/数据：PyTorch、YOLO、OpenCV、MySQL、Redis、Hadoop
+1. 集成逻辑回归、随机森林、SVM、XGBoost四种机器学习模型
+2. 实现网格搜索自动调优，模型准确率达到较高水平
+3. 提供个人数据面板、预测历史、健康数据管理等完整功能
 
-设定参考：https://www.zxluky.asia/about
+设定参考：https://github.com/zxluckly/disease_prediction
 本文为基于公开设定的档案式改写，非游戏原文。

@@ -1,18 +1,18 @@
 ﻿RHINE LAB · INTERNAL DATABASE
-FILE X-010 / 开源贡献与分享
-OPEN SOURCE CONTRIBUTION
+FILE X-010 / 郑州租房数据分析系统
+RENTAL DATA ANALYSIS
 
-科室：社区参与科
-编目范围：持续进行中
-相关人物：知识分享
-访问范围：OPEN ACCESS
+科室：项目展示科
+编目范围：2026年
+相关人物：Flask + Pyecharts
+访问范围：REFERENCE AREA
 
-相信开源的力量，积极参与开源社区。在GitHub上分享项目代码，在博客上记录技术心得。希望通过知识分享帮助更多开发者，也在交流中不断提升自己。开源不仅是代码的共享，更是思想的碰撞。
+一个基于 Flask、Pandas、Pyecharts 和 Three.js 的租房数据分析可视化项目，围绕郑州租房房源数据完成数据采集、清洗、统计分析、图表展示、3D 地图交互和房源筛选查询。项目当前已经内置一份抓取后的郑州租房 CSV 数据，启动后即可直接查看分析结果，无需先重新爬虫。
 
 研究记录
-1. GitHub项目：将学习项目开源，提供清晰的文档说明
-2. 技术博客：记录开发过程中的坑点与解决方案
-3. 社区互动：在论坛和评论区与开发者交流讨论
+1. 使用Pandas完成数据清洗和统计分析
+2. Pyecharts生成多维度可视化图表
+3. Three.js实现3D地图交互展示
 
-设定参考：https://github.com/zxluckly
+设定参考：https://www.zxluky.asia/projects
 本文为基于公开设定的档案式改写，非游戏原文。

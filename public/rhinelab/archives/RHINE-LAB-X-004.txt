@@ -1,18 +1,18 @@
 ﻿RHINE LAB · INTERNAL DATABASE
-FILE X-004 / 个人技术博客
-TECH BLOG SYSTEM
+FILE X-004 / 成长历程
+GROWTH JOURNEY
 
-科室：前端开发科
-编目范围：持续更新中
-相关人物：Next.js 16 + React 19
-访问范围：OPEN ACCESS
+科室：综合发展科
+编目范围：2024-2026
+相关人物：从入门到进阶
+访问范围：REFERENCE AREA
 
-基于Next.js 16和React 19构建的现代化技术博客。采用App Router架构，支持Markdown文章渲染、代码高亮、数学公式展示。集成项目展示、关于我、留言板等模块，记录技术成长的点点滴滴。
+从前端起步，逐步涉足后端、数据库、AI等领域。每个项目都是一次学习机会，每个bug都是一次成长经历。不追求多华丽的表达，只希望把踩过的坑、学到的知识点慢慢记录下来，和同样在路上的你一起成长。
 
 研究记录
-1. 使用Next.js 16最新特性，实现服务端渲染与静态生成
-2. 集成Motion动画库，打造流畅的交互体验
-3. 采用Tailwind CSS 4构建响应式界面，支持多端适配
+1. 前端进阶：从Vue入门到React、Next.js的深入使用
+2. 后端拓展：Python、Java双线发展，掌握多种框架
+3. AI应用：将机器学习与实际项目结合，解决真实问题
 
-设定参考：https://www.zxluky.asia
+设定参考：https://www.zxluky.asia/about
 本文为基于公开设定的档案式改写，非游戏原文。

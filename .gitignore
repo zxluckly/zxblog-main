@@ -44,3 +44,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 RHINELAB_INTEGRATION.md
+RHINELAB_完成报告.md
+*.md
