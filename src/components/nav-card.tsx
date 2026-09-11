@@ -47,24 +47,24 @@ const list = [
 		label: '关于我的',
 		href: '/about'
 	},
-	// {
-	// 	icon: ShareOutlineSVG,
-	// 	iconActive: ShareFilledSVG,
-	// 	label: '推荐分享',
-	// 	href: '/share'
-	// },
+	{
+		icon: ShareOutlineSVG,
+		iconActive: ShareFilledSVG,
+		label: '工具分享',
+		href: '/share'
+	},
 	{
 		icon: WebsiteOutlineSVG,
 		iconActive: WebsiteFilledSVG,
 		label: '站点介绍',
 		href: '/rhine-lab'
 	},
-	{
-		icon: VideosOutlineSVG,
-		iconActive: VideosFilledSVG,
-		label: '视频空间',
-		href: '/videos'
-	},
+	// {
+	// 	icon: VideosOutlineSVG,
+	// 	iconActive: VideosFilledSVG,
+	// 	label: '视频空间',
+	// 	href: '/videos'
+	// },
 	// {
 	// 	icon: GuestbookOutlineSVG,
 	// 	iconActive: GuestbookFilledSVG,
