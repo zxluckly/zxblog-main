@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { X, Send, Mic, Loader2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { AIMarkdownMessage } from '@/components/ai-markdown-message'
+import { AIReasoningBlock } from '@/components/ai-reasoning-block'
 
 interface Message {
 	role: 'user' | 'assistant'
@@ -13,6 +14,7 @@ interface Message {
 	searchStatus?: 'searching' | 'search_completed'
 	webSearchCount?: number | null
 	searchDetailsAvailable?: boolean
+	reasoning?: string
 }
 
 interface AIChatDialogProps {
@@ -284,6 +286,7 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 			const reader = response.body?.getReader()
 			const decoder = new TextDecoder()
 			let assistantMessage = ''
+			let reasoningText = ''
 			let searchStatus: Message['searchStatus']
 			let webSearchCount: number | null | undefined
 			let searchDetailsAvailable = false
@@ -302,7 +305,8 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 						isStreaming,
 						searchStatus,
 						webSearchCount,
-						searchDetailsAvailable
+						searchDetailsAvailable,
+						reasoning: reasoningText || undefined
 					}
 					return newMsgs
 				})
@@ -331,6 +335,14 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 						webSearchCount = typeof parsed.webSearch === 'number' ? parsed.webSearch : null
 						searchDetailsAvailable = parsed.detailsAvailable === true
 						updateAssistantMessage(assistantMessage, true)
+						return
+					}
+
+					if (eventName === 'reasoning') {
+						if (typeof parsed.delta === 'string' && parsed.delta) {
+							reasoningText += parsed.delta
+							updateAssistantMessage(assistantMessage, true)
+						}
 						return
 					}
 
@@ -391,6 +403,7 @@ export default function AIChatDialog({ isOpen, onClose }: AIChatDialogProps) {
 			return (
 				<div className='space-y-1.5'>
 					{msg.searchStatus === 'searching' && <p className='text-secondary text-xs'>正在联网检索…</p>}
+					{msg.reasoning && <AIReasoningBlock content={msg.reasoning} isStreaming={msg.isStreaming} />}
 					<AIMarkdownMessage content={content} isStreaming={msg.isStreaming} />
 					{msg.webSearchCount !== undefined && (
 						<p className='text-secondary text-xs'>

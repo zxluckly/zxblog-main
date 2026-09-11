@@ -418,6 +418,15 @@ function extractResponsesOutputText({ eventName, data }: SseEvent): string {
 	return typeof parsed?.delta === 'string' ? parsed.delta : ''
 }
 
+// 思考链增量事件。火山方舟官方事件名为 response.reasoning_summary_text.delta，
+// 同时兼容部分 OpenAI 兼容实现直接推送原始思维链的 response.reasoning_text.delta。
+const REASONING_DELTA_EVENT_TYPES = new Set(['response.reasoning_summary_text.delta', 'response.reasoning_text.delta'])
+
+function extractResponsesReasoningDelta(parsed: unknown): string {
+	if (!isRecord(parsed) || typeof parsed.type !== 'string' || !REASONING_DELTA_EVENT_TYPES.has(parsed.type)) return ''
+	return typeof parsed.delta === 'string' ? parsed.delta : ''
+}
+
 function createJsonResponse(body: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(body), {
 		...init,
@@ -710,6 +719,11 @@ function createResponsesStreamResponse(source: ReadableStream<Uint8Array> | null
 					enqueue(createSseEvent('status', { phase: 'completed' }))
 				}
 
+				const reasoningDelta = extractResponsesReasoningDelta(parsed)
+				if (reasoningDelta) {
+					enqueue(createSseEvent('reasoning', { type: 'reasoning', delta: reasoningDelta }))
+				}
+
 				const content = extractResponsesOutputText({ eventName: null, data })
 				if (content) enqueueText(content)
 			}
@@ -822,7 +836,9 @@ async function fetchArk(body: Record<string, unknown>) {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${ARK_API_KEY}`
 			},
-			body: JSON.stringify(body)
+			// chat/completions 只服务 chat 模式，强制关闭深度思考以尽快返回结果；
+			// 放在展开之后，避免调用方传入的字段覆盖该限制。
+			body: JSON.stringify({ ...body, thinking: { type: 'disabled' } })
 		})
 
 		if (!response.ok) {
