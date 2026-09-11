@@ -9,7 +9,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ARK_API_KEY = process.env.ARK_API_KEY
-const ARK_MODEL = process.env.ARK_MODEL || 'ep-20260831230602-26bn4'
+const ARK_MODEL = process.env.ARK_MODEL || 'ep-20260911221110-9pjk7'
 const ARK_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
 const ARK_RESPONSES_MODEL = process.env.ARK_RESPONSES_MODEL || 'ep-20260831230602-26bn4'
 const ARK_RESPONSES_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses'
