@@ -5,7 +5,8 @@ import projects from '@/app/projects/list.json'
 import siteContent from '@/config/site-content.json'
 
 // 使用 Node.js Runtime，避免 Edge Runtime 出网时的额外限制
-export const runtime = 'nodejs'
+// export const runtime = 'nodejs'
+export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 const ARK_API_KEY = process.env.ARK_API_KEY
