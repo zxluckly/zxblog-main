@@ -5,8 +5,7 @@ import projects from '@/app/projects/list.json'
 import siteContent from '@/config/site-content.json'
 
 // 使用 Node.js Runtime，避免 Edge Runtime 出网时的额外限制
-// export const runtime = 'nodejs'
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ARK_API_KEY = process.env.ARK_API_KEY
@@ -837,6 +836,7 @@ async function fetchArk(body: Record<string, unknown>) {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${ARK_API_KEY}`
 			},
+			signal: AbortSignal.timeout(ARK_REQUEST_TIMEOUT_MS),
 			// chat/completions 只服务 chat 模式，强制关闭深度思考以尽快返回结果；
 			// 放在展开之后，避免调用方传入的字段覆盖该限制。
 			body: JSON.stringify({ ...body, thinking: { type: 'disabled' } })
