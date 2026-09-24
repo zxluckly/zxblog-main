@@ -14,5 +14,5 @@ DEVELOPMENT PHILOSOPHY
 2. 善用设计模式，提升代码的可扩展性和复用性
 3. 保持技术敏感度，及时学习业界新技术与最佳实践
 
-设定参考：https://www.zxluky.asia
+设定参考：https://www.zxlucky.top
 本文为基于公开设定的档案式改写，非游戏原文。

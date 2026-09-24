@@ -14,5 +14,5 @@ AI VISION PLATFORM
 2. 支持多预训练模型动态加载与切换
 3. 集成PySpark + HDFS，具备大数据处理能力
 
-设定参考：https://www.zxluky.asia/projects
+设定参考：https://www.zxlucky.top/projects
 本文为基于公开设定的档案式改写，非游戏原文。

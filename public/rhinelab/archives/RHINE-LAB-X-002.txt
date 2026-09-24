@@ -14,5 +14,5 @@ TECH STACK OVERVIEW
 2. 后端架构：RESTful API设计、数据库优化、缓存策略
 3. AI应用：YOLO目标检测、机器学习模型训练与部署
 
-设定参考：https://www.zxluky.asia/about
+设定参考：https://www.zxlucky.top/about
 本文为基于公开设定的档案式改写，非游戏原文。

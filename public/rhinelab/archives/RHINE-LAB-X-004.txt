@@ -14,5 +14,5 @@ GROWTH JOURNEY
 2. 后端拓展：Python、Java双线发展，掌握多种框架
 3. AI应用：将机器学习与实际项目结合，解决真实问题
 
-设定参考：https://www.zxluky.asia/about
+设定参考：https://www.zxlucky.top/about
 本文为基于公开设定的档案式改写，非游戏原文。

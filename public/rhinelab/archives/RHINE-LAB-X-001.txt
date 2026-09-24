@@ -14,5 +14,5 @@ ABOUT ME
 2. 后端技术：Python、Django、Flask、Java、Spring Boot、Node.js
 3. AI/数据：PyTorch、YOLO、OpenCV、MySQL、Redis、Hadoop
 
-设定参考：https://www.zxluky.asia/about
+设定参考：https://www.zxlucky.top/about
 本文为基于公开设定的档案式改写，非游戏原文。

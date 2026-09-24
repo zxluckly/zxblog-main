@@ -14,5 +14,5 @@ FOOD AI PLATFORM
 2. 混合推荐算法结合用户偏好与食材属性
 3. 集成营养成分分析，帮助用户了解食物营养价值
 
-设定参考：https://www.zxluky.asia/projects
+设定参考：https://www.zxlucky.top/projects
 本文为基于公开设定的档案式改写，非游戏原文。
