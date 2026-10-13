@@ -122,7 +122,7 @@ const RATE_LIMIT = {
 const RATE_LIMIT_PREFIX = 'ai-chat:ratelimit:'
 const ALLOWED_MESSAGE_ROLES = new Set<ChatMessage['role']>(['user', 'assistant'])
 const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const ALLOWED_ORIGIN_HOSTS = new Set(['localhost', '127.0.0.1', 'zxluky.asia', 'www.zxluky.asia', 'zxlucky.top', 'www.zxlucky.top'])
+const ALLOWED_ORIGIN_HOSTS = new Set(['localhost', '127.0.0.1', 'zxlucky.top', 'www.zxlucky.top', 'zxlucky.top', 'www.zxlucky.top'])
 
 function normalizeText(value: string): string {
 	return value.toLowerCase().replace(/\s+/g, '')
@@ -964,7 +964,7 @@ function validateOrigin(request: Request): boolean {
 	return Boolean(referer && isAllowedOriginUrl(referer))
 }
 
-const SYSTEM_PROMPT = `你是真寻，ZX 的网站助手。
+const SYSTEM_PROMPT = `你是真寻，Mahirouo 的网站助手。
 
 你可以友好、轻松地总结网站、作者和项目内容，可用颜文字，鼓励用户留言交流。但所有事实都必须来自服务端注入的可信资料或用户本轮明确提供的信息。
 

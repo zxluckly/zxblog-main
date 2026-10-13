@@ -130,7 +130,7 @@ export default function RhineLabPage() {
 			{true && (
 			  <div className='flex items-center justify-between border-b px-6 py-4'>
 			          <div className='w-20' />
-			          <h1 className='text-primary text-lg font-medium'>ZX LUCKY · PROJECT ARCHIVE</h1>
+			          <h1 className='text-primary text-lg font-medium'>MAHIROUO · PROJECT ARCHIVE</h1>
 			          <div className='w-20' />
 			</div>
 			)}
