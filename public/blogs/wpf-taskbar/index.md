@@ -6,7 +6,7 @@ Windows 明明知道，就是不摆在你面前。托盘偶尔能显示电量，
 
 后来做了个托盘程序，顺手在任务栏上挂一条，把连着的设备电量都摆出来。
 
-![任务栏悬浮条](/blogs/wpf-taskbar/432307edf5b44b6b.png)
+![任务栏悬浮条](/blogs/wpf-taskbar/3b9ed3be4ba00e05.png)
 
 ## 第一版
 
@@ -68,11 +68,11 @@ _backgroundBrush.Opacity = 1.0 / 255.0;
 
 不悬停是这样，背景完全是桌面：
 
-![非悬停](blogs/wpf-taskbar/taskbar-overlay-2.png)
+![非悬停](/blogs/wpf-taskbar/462d2cf87cc44816.png)
 
 移上去，卡片淡入，右边多出刷新按钮：
 
-![悬停](taskbar-overlay-3.png)
+![悬停](/blogs/wpf-taskbar/432307edf5b44b6b.png)
 
 按钮按下缩到 0.86，松开回弹同时转一圈。没什么实际用处，但没有这一帧，点着没反馈。
 
